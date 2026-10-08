@@ -40,7 +40,7 @@ export const FloatingWhatsApp = () => {
         className="relative group w-14 h-14 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-emerald-500/30 hover:scale-105 transition-all duration-300"
         aria-label="Chat on WhatsApp"
       >
-        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 rounded-full animate-ping" />
+        <span className="attention-pulse absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 rounded-full" />
         <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 rounded-full" />
         <MessageCircle className="w-7 h-7" />
       </a>

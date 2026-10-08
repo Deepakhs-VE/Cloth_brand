@@ -3,8 +3,11 @@ import { Mail, Clock, CheckCircle, MessageSquare, Trash2, Edit2 } from 'lucide-r
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
+import { SelectDropdown } from '../../components/common/SelectDropdown';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminMessagesPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,17 +51,21 @@ export const AdminMessagesPage = () => {
       await loadMessages();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating status');
+      showAlert(err.response?.data?.message || 'Error updating status');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this message inquiry?')) {
+    const confirmed = await showConfirm(
+      'This customer inquiry and its administrator notes will be permanently removed.',
+      { title: 'Delete Inquiry?', confirmLabel: 'Delete Inquiry' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/contact/${id}`);
         await loadMessages();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting message');
+        showAlert(err.response?.data?.message || 'Error deleting message');
       }
     }
   };
@@ -160,16 +167,18 @@ export const AdminMessagesPage = () => {
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                 Inquiry Status *
               </label>
-              <select
+              <SelectDropdown
                 value={newStatus}
-                onChange={(e) => setNewStatus(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
-              >
-                <option value="NEW">NEW</option>
-                <option value="READ">READ</option>
-                <option value="IN_PROGRESS">IN PROGRESS</option>
-                <option value="RESOLVED">RESOLVED</option>
-              </select>
+                onChange={setNewStatus}
+                options={[
+                  { value: 'NEW', label: 'New' },
+                  { value: 'READ', label: 'Read' },
+                  { value: 'IN_PROGRESS', label: 'In Progress' },
+                  { value: 'RESOLVED', label: 'Resolved' },
+                ]}
+                ariaLabel="Inquiry status"
+                required
+              />
             </div>
 
             <div>

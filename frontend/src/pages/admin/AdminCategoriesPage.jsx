@@ -3,8 +3,11 @@ import { FolderTree, Plus, Edit2, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
+import { ImageUpload } from '../../components/common/ImageUpload';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminCategoriesPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +44,7 @@ export const AdminCategoriesPage = () => {
     setFormData({
       name: '',
       description: '',
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80',
+      image: '',
       displayOrder: categories.length + 1,
       isActive: true,
     });
@@ -71,17 +74,21 @@ export const AdminCategoriesPage = () => {
       await loadCategories();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving category');
+      showAlert(err.response?.data?.message || 'Error saving category');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you wish to delete this category?')) {
+    const confirmed = await showConfirm(
+      'Products assigned to this category may no longer appear in category browsing.',
+      { title: 'Delete Category?', confirmLabel: 'Delete Category' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/categories/${id}`);
         await loadCategories();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting category');
+        showAlert(err.response?.data?.message || 'Error deleting category');
       }
     }
   };
@@ -110,7 +117,7 @@ export const AdminCategoriesPage = () => {
             >
               <div className="aspect-[16/9] bg-slate-100 overflow-hidden relative">
                 <img
-                  src={cat.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80'}
+                  src={cat.image || '/image-placeholder.svg'}
                   alt={cat.name}
                   className="w-full h-full object-cover"
                 />
@@ -180,17 +187,13 @@ export const AdminCategoriesPage = () => {
             />
           </div>
 
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-              Banner Image URL
-            </label>
-            <input
-              type="text"
-              value={formData.image}
-              onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
-            />
-          </div>
+          <ImageUpload
+            label="Category Banner"
+            value={formData.image}
+            onChange={(image) => setFormData({ ...formData, image })}
+            purpose="categories"
+            required
+          />
 
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">

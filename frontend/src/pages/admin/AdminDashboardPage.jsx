@@ -18,21 +18,26 @@ import { OrderStatusBadge } from '../../components/common/Badge';
 export const AdminDashboardPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const res = await api.get('/admin/dashboard-stats');
+      if (!res.data.success) {
+        throw new Error(res.data.message || 'Dashboard data could not be loaded');
+      }
+      setData(res.data);
+    } catch (err) {
+      console.error('Error fetching admin stats:', err);
+      setError(err.response?.data?.message || err.message || 'Dashboard data could not be loaded');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get('/admin/dashboard-stats');
-        if (res.data.success) {
-          setData(res.data);
-        }
-      } catch (err) {
-        console.error('Error fetching admin stats:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchStats();
   }, []);
 
@@ -46,14 +51,35 @@ export const AdminDashboardPage = () => {
     );
   }
 
-  const stats = data?.stats || {
+  if (error) {
+    return (
+      <AdminLayout title="Executive Overview">
+        <div className="max-w-xl mx-auto mt-16 bg-white border border-rose-200 rounded-3xl p-8 text-center shadow-sm">
+          <AlertTriangle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
+          <h2 className="font-luxury text-xl font-bold text-slate-900">Dashboard data unavailable</h2>
+          <p className="text-sm text-slate-600 mt-2">{error}</p>
+          <button
+            onClick={fetchStats}
+            className="mt-6 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-wider font-bold transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const stats = {
     totalRevenue: 0,
     totalOrders: 0,
     totalUsers: 0,
     totalProducts: 0,
     pendingOrders: 0,
     completedOrders: 0,
+    ...(data?.stats || {}),
   };
+
+  stats.totalRevenue = Number(stats.totalRevenue) || 0;
 
   return (
     <AdminLayout title="Executive Performance Dashboard">

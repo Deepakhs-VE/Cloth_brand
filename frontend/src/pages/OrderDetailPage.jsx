@@ -15,6 +15,7 @@ import {
 import api from '../services/api';
 import { OrderStatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
+import { getProductPath } from '../utils/productPath';
 
 export const OrderDetailPage = () => {
   const { id } = useParams();
@@ -51,9 +52,11 @@ export const OrderDetailPage = () => {
     setCancelError('');
 
     try {
-      const res = await api.patch(`/orders/${order._id}/cancel`, {
-        reason: cancelReason,
-      });
+      const res = order.isPaid
+        ? await api.post(`/orders/${order._id}/refund-request`, { reason: cancelReason })
+        : order.paymentMethod === 'stripe'
+        ? await api.post('/payments/cancel-checkout', { orderId: order._id })
+        : await api.patch(`/orders/${order._id}/cancel`, { reason: cancelReason });
 
       if (res.data.success) {
         setOrder(res.data.order);
@@ -107,7 +110,29 @@ export const OrderDetailPage = () => {
   };
 
   const currentStepIndex = statusIndexMap[order.orderStatus] ?? 0;
-  const isCancellable = ['PENDING', 'CONFIRMED'].includes(order.orderStatus);
+  const activeRefundStatuses = ['REQUESTED', 'APPROVED', 'RECEIVED', 'REFUND_PENDING', 'COMPLETED'];
+  const hasActiveRefundRequest = activeRefundStatuses.includes(order.refundRequest?.status);
+  const isUnpaidCancellable = !order.isPaid && ['PENDING', 'CONFIRMED'].includes(order.orderStatus);
+  const isPaidCancellationRequest =
+    order.isPaid &&
+    order.paymentStatus === 'PAID' &&
+    ['PENDING', 'CONFIRMED', 'PROCESSING'].includes(order.orderStatus) &&
+    !hasActiveRefundRequest;
+  const returnWindowEndsAt = order.deliveredAt
+    ? new Date(order.deliveredAt).getTime() + 30 * 24 * 60 * 60 * 1000
+    : 0;
+  const isReturnRequest =
+    order.isPaid &&
+    order.paymentStatus === 'PAID' &&
+    order.orderStatus === 'DELIVERED' &&
+    Date.now() <= returnWindowEndsAt &&
+    !hasActiveRefundRequest;
+  const canOpenRequest = isUnpaidCancellable || isPaidCancellationRequest || isReturnRequest;
+  const requestButtonLabel = isReturnRequest
+    ? 'Request Return & Refund'
+    : isPaidCancellationRequest
+    ? 'Request Cancellation & Refund'
+    : 'Cancel Order';
 
   return (
     <div className="bg-[#fcfbfa] min-h-screen py-12">
@@ -133,16 +158,44 @@ export const OrderDetailPage = () => {
             </p>
           </div>
 
-          {/* Cancel button if eligible */}
-          {isCancellable && (
+          {/* Cancellation / return action when eligible */}
+          {canOpenRequest && (
             <button
               onClick={() => setCancelModalOpen(true)}
               className="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold uppercase tracking-wider transition self-start sm:self-auto"
             >
-              Cancel Order
+              {requestButtonLabel}
             </button>
           )}
         </div>
+
+        {order.refundRequest && (
+          <div className={`p-5 rounded-2xl border ${
+            order.refundRequest.status === 'REJECTED'
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : order.refundRequest.status === 'COMPLETED'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider">
+                {order.refundRequest.type === 'RETURN' ? 'Return' : 'Cancellation'} request
+              </p>
+              <span className="text-[10px] font-bold uppercase px-2 py-1 bg-white/70 rounded-lg">
+                {order.refundRequest.status.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <p className="text-xs mt-2">Reason: {order.refundRequest.reason}</p>
+            {order.refundRequest.adminNote && (
+              <p className="text-xs mt-1">Store response: {order.refundRequest.adminNote}</p>
+            )}
+            {order.refundRequest.type === 'RETURN' && order.refundRequest.status === 'APPROVED' && (
+              <p className="text-xs mt-2 font-semibold">
+                Your return is approved. Send the complete order back using the instructions provided by support. The refund is issued after the parcel is received and inspected.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Status Timeline */}
         {order.orderStatus !== 'CANCELLED' && order.orderStatus !== 'REFUNDED' ? (
@@ -212,16 +265,38 @@ export const OrderDetailPage = () => {
           </h2>
 
           <div className="divide-y divide-slate-100">
-            {order.orderItems.map((item, idx) => (
-              <div key={idx} className="py-4 flex items-center justify-between gap-4">
-                <div className="flex items-center space-x-4">
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-16 h-16 object-cover rounded-xl border border-slate-100"
-                  />
+            {order.orderItems.map((item, idx) => {
+              const productPath = getProductPath(item);
+              return (
+              <div key={idx} className="group/item py-4 flex items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center space-x-4">
+                  {productPath ? (
+                    <Link
+                      to={productPath}
+                      className="block shrink-0 overflow-hidden rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                      aria-label={`View ${item.name}`}
+                    >
+                      <img
+                        src={item.image || '/image-placeholder.svg'}
+                        alt={item.name}
+                        className="w-16 h-16 object-cover border border-slate-100 transition-transform duration-300 group-hover/item:scale-105"
+                      />
+                    </Link>
+                  ) : (
+                    <img
+                      src={item.image || '/image-placeholder.svg'}
+                      alt={item.name}
+                      className="w-16 h-16 shrink-0 object-cover rounded-xl border border-slate-100"
+                    />
+                  )}
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{item.name}</h4>
+                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">
+                      {productPath ? (
+                        <Link to={productPath} className="transition hover:text-amber-700 focus:outline-none focus:underline">
+                          {item.name}
+                        </Link>
+                      ) : item.name}
+                    </h4>
                     <div className="flex items-center space-x-2 mt-0.5 text-[11px] text-slate-500">
                       <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
                         Size: {item.selectedSize || 'M'}
@@ -237,7 +312,8 @@ export const OrderDetailPage = () => {
                   ${item.total.toFixed(2)}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Pricing Totals */}
@@ -318,11 +394,15 @@ export const OrderDetailPage = () => {
       <Modal
         isOpen={cancelModalOpen}
         onClose={() => setCancelModalOpen(false)}
-        title="Cancel This Order"
+        title={isReturnRequest ? 'Request a Return & Refund' : order?.isPaid ? 'Request Cancellation & Refund' : 'Cancel This Order'}
       >
         <form onSubmit={handleCancelOrder} className="space-y-4">
           <p className="text-xs text-slate-600">
-            Cancelling will restore inventory items and initiate transaction reversal.
+            {isReturnRequest
+              ? 'Returns are reviewed by the store. After approval, send the complete order back; Stripe refunds the original payment after the parcel is received and inspected.'
+              : order?.isPaid
+              ? 'The store must approve this request before your original Stripe payment is refunded. Orders already in transit cannot be cancelled.'
+              : 'Cancelling will close the unpaid Stripe session and restore the reserved inventory.'}
           </p>
 
           {cancelError && (
@@ -333,14 +413,15 @@ export const OrderDetailPage = () => {
 
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-              Reason for Cancellation
+              {isReturnRequest ? 'Reason for Return' : 'Reason for Cancellation'}
             </label>
             <textarea
               rows={3}
               required
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="e.g. Changed preference / incorrect delivery address"
+              minLength={10}
+              placeholder={isReturnRequest ? 'Explain why you are returning this order' : 'e.g. Changed preference or incorrect delivery address'}
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
             />
           </div>
@@ -350,7 +431,11 @@ export const OrderDetailPage = () => {
             disabled={cancelling}
             className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs uppercase tracking-wider font-bold transition disabled:opacity-50"
           >
-            {cancelling ? 'Cancelling...' : 'Confirm Cancellation'}
+            {cancelling
+              ? 'Submitting...'
+              : order?.isPaid
+              ? 'Submit Request'
+              : 'Confirm Cancellation'}
           </button>
         </form>
       </Modal>

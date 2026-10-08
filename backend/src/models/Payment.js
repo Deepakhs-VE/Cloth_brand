@@ -24,7 +24,8 @@ const paymentSchema = new mongoose.Schema(
     },
     provider: {
       type: String,
-      enum: ['stripe', 'razorpay', 'mock_gateway', 'cod'],
+      enum: ['stripe'],
+      default: 'stripe',
       required: true,
     },
     transactionId: {
@@ -33,8 +34,16 @@ const paymentSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
+      enum: ['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED', 'REFUND_PENDING', 'REFUNDED'],
       default: 'PENDING',
+    },
+    stripeSessionId: {
+      type: String,
+      default: '',
+    },
+    stripePaymentIntentId: {
+      type: String,
+      default: '',
     },
     gatewayResponse: {
       type: Object,
@@ -44,6 +53,7 @@ const paymentSchema = new mongoose.Schema(
       refundId: String,
       amount: Number,
       reason: String,
+      status: String,
       refundedAt: Date,
     },
   },

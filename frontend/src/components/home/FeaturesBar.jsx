@@ -44,8 +44,8 @@ export const FeaturesBar = () => {
           {features.map((feature, idx) => {
             const IconComponent = iconMap[feature.icon] || ShieldCheck;
             return (
-              <div key={idx} className="flex items-start space-x-4">
-                <div className="p-3 bg-slate-50 text-slate-900 rounded-xl border border-slate-100 flex-shrink-0">
+              <div key={idx} className="feature-item group flex items-start space-x-4 rounded-2xl p-2">
+                <div className="feature-icon p-3 bg-slate-50 text-slate-900 rounded-xl border border-slate-100 flex-shrink-0">
                   <IconComponent className="w-5 h-5 text-amber-600" />
                 </div>
                 <div>

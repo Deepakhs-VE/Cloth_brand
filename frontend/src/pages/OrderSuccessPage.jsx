@@ -1,36 +1,61 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
-import { CheckCircle2, Package, ArrowRight, ShieldCheck, Printer } from 'lucide-react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { CheckCircle2, Package, AlertCircle } from 'lucide-react';
 import api from '../services/api';
+import { useCart } from '../context/CartContext';
 
 export const OrderSuccessPage = () => {
   const { id } = useParams();
-  const location = useLocation();
-  const [order, setOrder] = useState(location.state?.order || null);
-  const [loading, setLoading] = useState(!order);
+  const [searchParams] = useSearchParams();
+  const { fetchCart } = useCart();
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
-    if (!order && id) {
-      const fetchOrder = async () => {
-        try {
-          const res = await api.get(`/orders/${id}`);
-          if (res.data.success) {
-            setOrder(res.data.order);
-          }
-        } catch (err) {
-          console.error('Error loading order:', err);
-        } finally {
-          setLoading(false);
+    const confirmAndLoadOrder = async () => {
+      try {
+        if (!sessionId) {
+          throw new Error('Stripe confirmation reference is missing');
         }
-      };
-      fetchOrder();
-    }
-  }, [id, order]);
+
+        const confirmation = await api.get(`/payments/confirm/${encodeURIComponent(sessionId)}`);
+        if (!confirmation.data.success || confirmation.data.order?._id !== id) {
+          throw new Error('Stripe payment could not be matched to this order');
+        }
+
+        setOrder(confirmation.data.order);
+        await fetchCart();
+      } catch (err) {
+        setError(err.response?.data?.message || err.message || 'Unable to verify this Stripe payment');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    confirmAndLoadOrder();
+  }, [id, sessionId]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !order) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center px-4">
+        <div className="max-w-lg w-full bg-white border border-rose-100 rounded-3xl p-8 text-center shadow-sm">
+          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+          <h1 className="font-luxury text-2xl font-bold text-slate-900">Payment Verification Pending</h1>
+          <p className="text-sm text-slate-600 mt-3">{error}</p>
+          <Link to="/account/orders" className="inline-flex mt-6 px-6 py-3 bg-slate-900 text-white rounded-xl text-xs uppercase tracking-wider font-bold">
+            View My Orders
+          </Link>
+        </div>
       </div>
     );
   }

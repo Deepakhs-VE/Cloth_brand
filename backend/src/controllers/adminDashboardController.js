@@ -4,58 +4,56 @@ import { Order } from '../models/Order.js';
 
 export const getDashboardStats = async (req, res, next) => {
   try {
-    const totalUsers = await User.countDocuments({ role: 'customer' });
-    const totalProducts = await Product.countDocuments();
-    const totalOrders = await Order.countDocuments();
+    const paidOrderFilter = {
+      isPaid: true,
+      paymentStatus: 'PAID',
+      orderStatus: { $nin: ['CANCELLED', 'REFUNDED'] },
+    };
 
-    // Revenue calculation from confirmed, processing, shipped, delivered orders
-    const revenueStats = await Order.aggregate([
+    // Run independent dashboard queries together to avoid a slow waterfall on first load.
+    const [
+      totalUsers,
+      totalProducts,
+      totalOrders,
+      revenueStats,
+      pendingOrders,
+      processingOrders,
+      completedOrders,
+      cancelledOrders,
+      lowStockProducts,
+      recentOrders,
+      recentUsers,
+      monthlySalesDescending,
+    ] = await Promise.all([
+      User.countDocuments({ role: 'customer' }),
+      Product.countDocuments({ isActive: true }),
+      Order.countDocuments(),
+      Order.aggregate([
+        { $match: paidOrderFilter },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } },
+      ]),
+      Order.countDocuments({ orderStatus: { $in: ['PENDING', 'CONFIRMED'] } }),
+      Order.countDocuments({ orderStatus: { $in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] } }),
+      Order.countDocuments({ orderStatus: 'DELIVERED' }),
+      Order.countDocuments({ orderStatus: { $in: ['CANCELLED', 'REFUNDED'] } }),
+      Product.find({ isActive: true, stock: { $lte: 5 } })
+        .select('name sku stock price images')
+        .sort({ stock: 1, name: 1 })
+        .limit(10)
+        .lean(),
+      Order.find()
+        .populate('user', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      User.find({ role: 'customer' })
+        .select('name email createdAt isBlocked')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      Order.aggregate([
       {
-        $match: {
-          orderStatus: { $nin: ['CANCELLED', 'REFUNDED'] },
-          isPaid: true,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: '$totalAmount' },
-        },
-      },
-    ]);
-
-    const totalRevenue = revenueStats.length > 0 ? revenueStats[0].totalRevenue : 0;
-
-    // Order status breakdown
-    const pendingOrders = await Order.countDocuments({ orderStatus: { $in: ['PENDING', 'CONFIRMED'] } });
-    const processingOrders = await Order.countDocuments({ orderStatus: { $in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] } });
-    const completedOrders = await Order.countDocuments({ orderStatus: 'DELIVERED' });
-    const cancelledOrders = await Order.countDocuments({ orderStatus: { $in: ['CANCELLED', 'REFUNDED'] } });
-
-    // Low stock products (< 5 items)
-    const lowStockProducts = await Product.find({ stock: { $lte: 5 } })
-      .select('name sku stock price images')
-      .limit(10);
-
-    // Recent 5 orders
-    const recentOrders = await Order.find()
-      .populate('user', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    // Recent 5 users
-    const recentUsers = await User.find({ role: 'customer' })
-      .select('name email createdAt isBlocked')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    // Monthly sales data for charts (last 6 months)
-    const salesByMonth = await Order.aggregate([
-      {
-        $match: {
-          orderStatus: { $nin: ['CANCELLED', 'REFUNDED'] },
-          isPaid: true,
-        },
+        $match: paidOrderFilter,
       },
       {
         $group: {
@@ -64,9 +62,13 @@ export const getDashboardStats = async (req, res, next) => {
           count: { $sum: 1 },
         },
       },
-      { $sort: { _id: 1 } },
+      { $sort: { _id: -1 } },
       { $limit: 6 },
+      ]),
     ]);
+
+    const totalRevenue = revenueStats[0]?.totalRevenue || 0;
+    const salesByMonth = monthlySalesDescending.reverse();
 
     res.status(200).json({
       success: true,

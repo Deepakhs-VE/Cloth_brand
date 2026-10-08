@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidInternationalPhone } from '../utils/phone.js';
 
 const contactMessageSchema = new mongoose.Schema(
   {
@@ -17,6 +18,10 @@ const contactMessageSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+      validate: {
+        validator: isValidInternationalPhone,
+        message: 'Phone number must be a valid international number',
+      },
     },
     subject: {
       type: String,

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidInternationalPhone } from '../utils/phone.js';
 
 const orderItemSchema = new mongoose.Schema({
   product: {
@@ -7,6 +8,7 @@ const orderItemSchema = new mongoose.Schema({
     required: true,
   },
   name: { type: String, required: true },
+  slug: { type: String, default: '' },
   image: { type: String, required: true },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true, min: 1 },
@@ -34,6 +36,35 @@ const statusHistorySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+const refundRequestSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ['CANCELLATION', 'RETURN'],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: [
+        'REQUESTED',
+        'APPROVED',
+        'REJECTED',
+        'RECEIVED',
+        'REFUND_PENDING',
+        'COMPLETED',
+      ],
+      default: 'REQUESTED',
+    },
+    reason: { type: String, required: true, trim: true, maxlength: 1000 },
+    adminNote: { type: String, default: '', trim: true, maxlength: 1000 },
+    requestedAt: { type: Date, default: Date.now },
+    reviewedAt: Date,
+    receivedAt: Date,
+    completedAt: Date,
+  },
+  { _id: true }
+);
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
@@ -49,7 +80,14 @@ const orderSchema = new mongoose.Schema(
     orderItems: [orderItemSchema],
     shippingAddress: {
       fullName: { type: String, required: true },
-      phone: { type: String, required: true },
+      phone: {
+        type: String,
+        required: true,
+        validate: {
+          validator: isValidInternationalPhone,
+          message: 'Shipping phone must be valid for its country',
+        },
+      },
       streetAddress: { type: String, required: true },
       apartment: { type: String, default: '' },
       city: { type: String, required: true },
@@ -59,13 +97,13 @@ const orderSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ['stripe', 'razorpay', 'cod', 'card_online'],
+      enum: ['stripe'],
       required: true,
-      default: 'card_online',
+      default: 'stripe',
     },
     paymentStatus: {
       type: String,
-      enum: ['PENDING', 'PAID', 'FAILED', 'REFUNDED'],
+      enum: ['PENDING', 'PAID', 'FAILED', 'REFUND_PENDING', 'REFUNDED'],
       default: 'PENDING',
     },
     paymentResult: {
@@ -132,6 +170,10 @@ const orderSchema = new mongoose.Schema(
     deliveredAt: Date,
     cancelledAt: Date,
     cancellationReason: String,
+    refundRequest: {
+      type: refundRequestSchema,
+      default: null,
+    },
     carrier: {
       type: String,
       default: '',

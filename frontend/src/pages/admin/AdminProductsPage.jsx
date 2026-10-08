@@ -14,8 +14,12 @@ import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
 import { Pagination } from '../../components/common/Pagination';
+import { ImageUpload } from '../../components/common/ImageUpload';
+import { SelectDropdown } from '../../components/common/SelectDropdown';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminProductsPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +41,7 @@ export const AdminProductsPage = () => {
     stock: 10,
     sizes: 'XS, S, M, L, XL',
     colors: '',
-    images: '',
+    images: [],
     isFeatured: false,
     isActive: true,
   });
@@ -81,7 +85,7 @@ export const AdminProductsPage = () => {
       stock: 10,
       sizes: 'XS, S, M, L, XL',
       colors: '',
-      images: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
+      images: [],
       isFeatured: false,
       isActive: true,
     });
@@ -101,7 +105,7 @@ export const AdminProductsPage = () => {
       stock: p.stock,
       sizes: p.sizes?.join(', ') || 'XS, S, M, L, XL',
       colors: p.colors?.join(', ') || '',
-      images: p.images?.join('\n') || '',
+      images: p.images || [],
       isFeatured: p.isFeatured,
       isActive: p.isActive,
     });
@@ -122,7 +126,7 @@ export const AdminProductsPage = () => {
         colors: typeof formData.colors === 'string'
           ? formData.colors.split(',').map((c) => c.trim()).filter(Boolean)
           : formData.colors,
-        images: formData.images.split('\n').map((url) => url.trim()).filter(Boolean),
+        images: formData.images,
       };
 
       if (editingProduct) {
@@ -134,17 +138,21 @@ export const AdminProductsPage = () => {
       await loadData();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving product');
+      showAlert(err.response?.data?.message || 'Error saving product');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this masterwork?')) {
+    const confirmed = await showConfirm(
+      'This product and its catalog information will be permanently removed.',
+      { title: 'Delete Product?', confirmLabel: 'Delete Product' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/products/${id}`);
         await loadData();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting product');
+        showAlert(err.response?.data?.message || 'Error deleting product');
       }
     }
   };
@@ -168,7 +176,10 @@ export const AdminProductsPage = () => {
               type="text"
               placeholder="Search by name or SKU..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -204,7 +215,7 @@ export const AdminProductsPage = () => {
                     <td className="py-4 px-6">
                       <div className="flex items-center space-x-3">
                         <img
-                          src={p.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=100&q=80'}
+                          src={p.images?.[0] || '/image-placeholder.svg'}
                           alt={p.name}
                           className="w-12 h-12 object-cover rounded-xl border border-slate-100 flex-shrink-0"
                         />
@@ -310,18 +321,18 @@ export const AdminProductsPage = () => {
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                 Category *
               </label>
-              <select
-                required
+              <SelectDropdown
                 value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-              >
-                {categories.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(category) => setFormData({ ...formData, category })}
+                options={categories.map((category) => ({
+                  value: category._id,
+                  label: category.name,
+                }))}
+                placeholder="Select a category"
+                ariaLabel="Product category"
+                required
+                disabled={!categories.length}
+              />
             </div>
           </div>
 
@@ -417,17 +428,16 @@ export const AdminProductsPage = () => {
             />
           </div>
 
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-              Image URLs (one URL per line)
-            </label>
-            <textarea
-              rows={3}
-              value={formData.images}
-              onChange={(e) => setFormData({ ...formData, images: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
-            />
-          </div>
+          <ImageUpload
+            label="Product Gallery"
+            value={formData.images}
+            onChange={(images) => setFormData({ ...formData, images })}
+            purpose="products"
+            multiple
+            maxFiles={8}
+            required
+            aspectClass="aspect-square"
+          />
 
           <div className="flex items-center space-x-6 pt-2">
             <label className="flex items-center space-x-2 cursor-pointer text-xs">

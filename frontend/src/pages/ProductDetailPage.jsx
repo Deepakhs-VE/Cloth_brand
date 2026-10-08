@@ -23,22 +23,25 @@ import { StarRating } from '../components/common/StarRating';
 import { ProductCard } from '../components/common/ProductCard';
 import { Modal } from '../components/common/Modal';
 
-// Sizing table data for garments
-const sizeGuideData = {
-  in: [
-    { size: 'XS', chest: '34 - 36 in', waist: '28 - 30 in', hips: '35 - 37 in', length: '41.5 in' },
-    { size: 'S', chest: '36 - 38 in', waist: '30 - 32 in', hips: '37 - 39 in', length: '42.5 in' },
-    { size: 'M', chest: '38 - 40 in', waist: '32 - 34 in', hips: '39 - 41 in', length: '43.5 in' },
-    { size: 'L', chest: '41 - 43 in', waist: '35 - 37 in', hips: '42 - 44 in', length: '44.5 in' },
-    { size: 'XL', chest: '44 - 46 in', waist: '38 - 40 in', hips: '45 - 47 in', length: '45.5 in' },
-  ],
-  cm: [
-    { size: 'XS', chest: '86 - 91 cm', waist: '71 - 76 cm', hips: '89 - 94 cm', length: '105 cm' },
-    { size: 'S', chest: '91 - 97 cm', waist: '76 - 81 cm', hips: '94 - 99 cm', length: '108 cm' },
-    { size: 'M', chest: '97 - 102 cm', waist: '81 - 86 cm', hips: '99 - 104 cm', length: '110 cm' },
-    { size: 'L', chest: '104 - 109 cm', waist: '89 - 94 cm', hips: '107 - 112 cm', length: '113 cm' },
-    { size: 'XL', chest: '112 - 117 cm', waist: '97 - 102 cm', hips: '114 - 119 cm', length: '116 cm' },
-  ],
+// Inches are the canonical tailoring measurements. Centimeters are generated
+// from these values so both unit views always remain mathematically consistent.
+const sizeGuideData = [
+  { size: 'XS', chest: [34, 36], waist: [28, 30], hips: [35, 37], length: 41.5 },
+  { size: 'S', chest: [36, 38], waist: [30, 32], hips: [37, 39], length: 42.5 },
+  { size: 'M', chest: [38, 40], waist: [32, 34], hips: [39, 41], length: 43.5 },
+  { size: 'L', chest: [41, 43], waist: [35, 37], hips: [42, 44], length: 44.5 },
+  { size: 'XL', chest: [44, 46], waist: [38, 40], hips: [45, 47], length: 45.5 },
+];
+
+const formatMeasurement = (value, unit) => {
+  const convert = (measurement) =>
+    unit === 'cm' ? Math.round(measurement * 2.54) : measurement;
+  const suffix = unit === 'cm' ? 'cm' : 'in';
+
+  if (Array.isArray(value)) {
+    return `${convert(value[0])}–${convert(value[1])} ${suffix}`;
+  }
+  return `${convert(value)} ${suffix}`;
 };
 
 export const ProductDetailPage = () => {
@@ -622,10 +625,10 @@ export const ProductDetailPage = () => {
       <Modal
         isOpen={sizeGuideModalOpen}
         onClose={() => setSizeGuideModalOpen(false)}
-        title="Atelier Garment Sizing & Tailoring Guide"
-        maxWidth="max-w-2xl"
+        title="Size Guide & Measurements"
+        maxWidth="max-w-xl"
       >
-        <div className="space-y-6 pt-2">
+        <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <p className="text-xs text-slate-500">
               Garment sizing conforms to international tailoring dimensions.
@@ -635,7 +638,8 @@ export const ProductDetailPage = () => {
               <button
                 type="button"
                 onClick={() => setMeasurementUnit('in')}
-                className={`px-3 py-1 rounded-md transition ${
+                aria-pressed={measurementUnit === 'in'}
+                className={`px-3 py-1.5 rounded-md transition ${
                   measurementUnit === 'in'
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
@@ -646,7 +650,8 @@ export const ProductDetailPage = () => {
               <button
                 type="button"
                 onClick={() => setMeasurementUnit('cm')}
-                className={`px-3 py-1 rounded-md transition ${
+                aria-pressed={measurementUnit === 'cm'}
+                className={`px-3 py-1.5 rounded-md transition ${
                   measurementUnit === 'cm'
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
@@ -662,15 +667,15 @@ export const ProductDetailPage = () => {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">Chest / Bust</th>
-                  <th className="py-3 px-4">Waist</th>
-                  <th className="py-3 px-4">Hips</th>
-                  <th className="py-3 px-4">Garment Length</th>
+                  <th className="py-2.5 px-3">Size</th>
+                  <th className="py-2.5 px-3">Chest</th>
+                  <th className="py-2.5 px-3">Waist</th>
+                  <th className="py-2.5 px-3">Hips</th>
+                  <th className="py-2.5 px-3">Length</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
-                {sizeGuideData[measurementUnit].map((row) => (
+              <tbody key={measurementUnit} className="divide-y divide-slate-100 font-medium text-slate-600 animate-fade-in">
+                {sizeGuideData.map((row) => (
                   <tr
                     key={row.size}
                     className={
@@ -679,7 +684,7 @@ export const ProductDetailPage = () => {
                         : 'hover:bg-slate-50/50'
                     }
                   >
-                    <td className="py-3 px-4 font-bold text-slate-900">
+                    <td className="py-2.5 px-3 font-bold text-slate-900">
                       {row.size}
                       {selectedSize === row.size && (
                         <span className="ml-1.5 text-[10px] text-amber-700 font-normal">
@@ -687,10 +692,10 @@ export const ProductDetailPage = () => {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4">{row.chest}</td>
-                    <td className="py-3 px-4">{row.waist}</td>
-                    <td className="py-3 px-4">{row.hips}</td>
-                    <td className="py-3 px-4">{row.length}</td>
+                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.chest, measurementUnit)}</td>
+                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.waist, measurementUnit)}</td>
+                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.hips, measurementUnit)}</td>
+                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.length, measurementUnit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -698,11 +703,11 @@ export const ProductDetailPage = () => {
           </div>
 
           {/* Tailoring & Fit Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-xl border border-slate-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
             <div>
               <h4 className="font-bold text-slate-900 mb-1">How to Measure</h4>
               <p className="text-slate-500 leading-relaxed">
-                Measure chest/bust at fullest circumference. Measure natural waist at narrowest point. Hips approx. 20cm below waistline.
+                Measure the chest at its fullest point and the natural waist at its narrowest. Measure hips approximately {measurementUnit === 'cm' ? '20 cm' : '8 in'} below the waistline.
               </p>
             </div>
             <div>

@@ -40,12 +40,12 @@ export const ProductCard = ({ product }) => {
     : 0;
 
   return (
-    <div className="group relative bg-white rounded-2xl overflow-hidden border border-slate-100/80 hover:border-slate-300 hover:shadow-xl transition-all duration-300 flex flex-col h-full">
+    <div className="motion-card group relative bg-white rounded-2xl overflow-hidden border border-slate-100/80 hover:border-slate-300 hover:shadow-xl transition-all duration-300 flex flex-col h-full">
       {/* Image Container */}
       <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
         <Link to={`/products/${product.slug}`} className="block w-full h-full">
           <img
-            src={product.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80'}
+            src={product.images?.[0] || '/image-placeholder.svg'}
             alt={product.name}
             className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-out"
             loading="lazy"

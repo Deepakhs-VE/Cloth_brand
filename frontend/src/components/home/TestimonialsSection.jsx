@@ -44,7 +44,7 @@ export const TestimonialsSection = () => {
           {testimonials.map((item) => (
             <div
               key={item._id}
-              className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow duration-300 flex flex-col justify-between"
+              className="motion-card bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between"
             >
               <div>
                 <Quote className="w-8 h-8 text-amber-500/30 mb-4" />
@@ -58,10 +58,7 @@ export const TestimonialsSection = () => {
 
               <div className="flex items-center space-x-3 pt-4 border-t border-slate-50">
                 <img
-                  src={
-                    item.avatar ||
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
-                  }
+                  src={item.avatar || '/image-placeholder.svg'}
                   alt={item.clientName}
                   className="w-11 h-11 rounded-full object-cover border border-slate-100"
                 />

@@ -66,10 +66,10 @@ export const CategoriesSection = () => {
             <Link
               key={cat._id}
               to={`/products?category=${cat.slug}`}
-              className="group relative aspect-[3/4] rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500 block"
+              className="motion-card group relative aspect-[3/4] rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500 block"
             >
               <img
-                src={cat.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80'}
+                src={cat.image || '/image-placeholder.svg'}
                 alt={cat.name}
                 className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700 ease-out"
                 loading="lazy"

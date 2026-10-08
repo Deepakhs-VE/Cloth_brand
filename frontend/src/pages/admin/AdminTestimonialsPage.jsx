@@ -4,8 +4,11 @@ import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
 import { StarRating } from '../../components/common/StarRating';
+import { ImageUpload } from '../../components/common/ImageUpload';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminTestimonialsPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -44,7 +47,7 @@ export const AdminTestimonialsPage = () => {
     setFormData({
       clientName: '',
       roleOrCompany: 'Verified Patron',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+      avatar: '',
       rating: 5,
       reviewText: '',
       isActive: true,
@@ -78,17 +81,21 @@ export const AdminTestimonialsPage = () => {
       await loadTestimonials();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving testimonial');
+      showAlert(err.response?.data?.message || 'Error saving testimonial');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this testimonial?')) {
+    const confirmed = await showConfirm(
+      'This testimonial will be permanently removed from the storefront.',
+      { title: 'Delete Testimonial?', confirmLabel: 'Delete Testimonial' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/testimonials/${id}`);
         await loadTestimonials();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting testimonial');
+        showAlert(err.response?.data?.message || 'Error deleting testimonial');
       }
     }
   };
@@ -118,7 +125,7 @@ export const AdminTestimonialsPage = () => {
               <div>
                 <div className="flex items-center space-x-3 mb-4">
                   <img
-                    src={t.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
+                    src={t.avatar || '/image-placeholder.svg'}
                     alt={t.clientName}
                     className="w-12 h-12 rounded-full object-cover border border-slate-100"
                   />
@@ -201,17 +208,13 @@ export const AdminTestimonialsPage = () => {
             </div>
           </div>
 
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-              Avatar Image URL
-            </label>
-            <input
-              type="text"
-              value={formData.avatar}
-              onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
-            />
-          </div>
+          <ImageUpload
+            label="Client Avatar"
+            value={formData.avatar}
+            onChange={(avatar) => setFormData({ ...formData, avatar })}
+            purpose="testimonials"
+            aspectClass="aspect-square"
+          />
 
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">

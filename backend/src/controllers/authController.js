@@ -6,15 +6,23 @@ import {
   verifyRefreshToken,
 } from '../config/jwt.js';
 import { emailService } from '../utils/emailService.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, confirmPassword, phone } = req.body;
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !confirmPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide name, email, and password',
+        message: 'Please provide name, email, password, and confirm password',
+      });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password and confirm password must match',
       });
     }
 
@@ -30,7 +38,7 @@ export const register = async (req, res, next) => {
       name,
       email,
       password,
-      phone: phone || '',
+      phone: normalizePhoneNumber(phone),
       role: 'customer',
     });
 
@@ -219,16 +227,25 @@ export const forgotPassword = async (req, res, next) => {
 
     await user.save({ validateBeforeSave: false });
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5174';
     const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
-    await emailService.sendPasswordResetEmail(user, resetUrl);
+    try {
+      await emailService.sendPasswordResetEmail(user, resetUrl);
+    } catch (emailError) {
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+      console.error(`Password reset email delivery failed: ${emailError.message}`);
+      const deliveryError = new Error('Unable to deliver the password reset email. Please try again later.');
+      deliveryError.statusCode = 502;
+      throw deliveryError;
+    }
 
     res.status(200).json({
       success: true,
       message: 'Password reset link dispatched.',
-      // In dev mode, return the token for quick testing convenience
-      devResetToken: process.env.NODE_ENV !== 'production' ? resetToken : undefined,
+      devResetToken: process.env.ALLOW_DEV_RESET_TOKEN === 'true' ? resetToken : undefined,
     });
   } catch (error) {
     next(error);
@@ -263,6 +280,7 @@ export const resetPassword = async (req, res, next) => {
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
+    user.refreshToken = undefined;
     await user.save();
 
     res.status(200).json({

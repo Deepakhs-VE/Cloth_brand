@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, Mail, Phone, Lock, CheckCircle2, ShieldCheck } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
 
 export const ProfilePage = () => {
   const { user, updateUserProfile } = useAuth();
@@ -25,6 +26,12 @@ export const ProfilePage = () => {
     setUpdatingProfile(true);
     setProfileSuccess('');
     setProfileError('');
+
+    if (!isPhoneValid(phone)) {
+      setProfileError('Enter a valid phone number including the country code');
+      setUpdatingProfile(false);
+      return;
+    }
 
     try {
       const res = await api.put('/users/profile', { name, phone });
@@ -134,11 +141,9 @@ export const ProfilePage = () => {
                 <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                   Phone Number
                 </label>
-                <input
-                  type="tel"
+                <InternationalPhoneInput
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  onChange={setPhone}
                 />
               </div>
 

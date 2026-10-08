@@ -6,6 +6,7 @@ import { ProductCard } from '../components/common/ProductCard';
 import { ProductFilters } from '../components/products/ProductFilters';
 import { Pagination } from '../components/common/Pagination';
 import { EmptyState } from '../components/common/EmptyState';
+import { SelectDropdown } from '../components/common/SelectDropdown';
 
 export const ProductsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -106,7 +107,7 @@ export const ProductsPage = () => {
 
   return (
     <div className="bg-[#fcfbfa] min-h-screen py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Breadcrumb / Title Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-8 border-b border-slate-200 gap-4">
           <div>
@@ -134,20 +135,24 @@ export const ProductsPage = () => {
 
             <div className="flex items-center space-x-2 bg-white px-3 py-2 border border-slate-200 rounded-xl text-xs shadow-sm">
               <span className="text-slate-400 font-medium">Sort by:</span>
-              <select
+              <SelectDropdown
                 value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
+                onChange={(nextSort) => {
+                  setSortBy(nextSort);
                   setPage(1);
                 }}
-                className="bg-transparent text-slate-800 font-semibold focus:outline-none cursor-pointer"
-              >
-                <option value="newest">Newest Arrivals</option>
-                <option value="featured">Featured First</option>
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-                <option value="rating">Top Rated</option>
-              </select>
+                options={[
+                  { value: 'newest', label: 'Newest Arrivals' },
+                  { value: 'featured', label: 'Featured First' },
+                  { value: 'price_asc', label: 'Price: Low to High' },
+                  { value: 'price_desc', label: 'Price: High to Low' },
+                  { value: 'rating', label: 'Top Rated' },
+                ]}
+                ariaLabel="Sort products"
+                className="min-w-[170px]"
+                buttonClassName="min-h-0 border-0 p-0 shadow-none hover:border-0 focus:shadow-none"
+                menuClassName="right-0 w-56"
+              />
             </div>
           </div>
         </div>
@@ -162,11 +167,20 @@ export const ProductsPage = () => {
                 selectedCategory={selectedCategory}
                 onCategoryChange={handleCategoryChange}
                 priceRange={priceRange}
-                onPriceRangeChange={setPriceRange}
+                onPriceRangeChange={(nextRange) => {
+                  setPriceRange(nextRange);
+                  setPage(1);
+                }}
                 inStockOnly={inStockOnly}
-                onInStockChange={setInStockOnly}
+                onInStockChange={(nextValue) => {
+                  setInStockOnly(nextValue);
+                  setPage(1);
+                }}
                 selectedRating={selectedRating}
-                onRatingChange={setSelectedRating}
+                onRatingChange={(nextRating) => {
+                  setSelectedRating(nextRating);
+                  setPage(1);
+                }}
                 onClearFilters={handleClearFilters}
               />
             </div>
@@ -193,11 +207,20 @@ export const ProductsPage = () => {
                     setMobileFilterOpen(false);
                   }}
                   priceRange={priceRange}
-                  onPriceRangeChange={setPriceRange}
+                  onPriceRangeChange={(nextRange) => {
+                    setPriceRange(nextRange);
+                    setPage(1);
+                  }}
                   inStockOnly={inStockOnly}
-                  onInStockChange={setInStockOnly}
+                  onInStockChange={(nextValue) => {
+                    setInStockOnly(nextValue);
+                    setPage(1);
+                  }}
                   selectedRating={selectedRating}
-                  onRatingChange={setSelectedRating}
+                  onRatingChange={(nextRating) => {
+                    setSelectedRating(nextRating);
+                    setPage(1);
+                  }}
                   onClearFilters={handleClearFilters}
                 />
               </div>

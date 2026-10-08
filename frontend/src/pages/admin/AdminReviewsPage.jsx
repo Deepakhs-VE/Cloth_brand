@@ -3,8 +3,10 @@ import { Star, CheckCircle, EyeOff, Trash2, ShieldCheck } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { StarRating } from '../../components/common/StarRating';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminReviewsPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,17 +35,21 @@ export const AdminReviewsPage = () => {
       });
       await loadReviews();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating review');
+      showAlert(err.response?.data?.message || 'Error updating review');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this review permanently?')) {
+    const confirmed = await showConfirm(
+      'This customer review will be permanently removed and cannot be restored.',
+      { title: 'Delete Review?', confirmLabel: 'Delete Review' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/reviews/admin/${id}`);
         await loadReviews();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting review');
+        showAlert(err.response?.data?.message || 'Error deleting review');
       }
     }
   };

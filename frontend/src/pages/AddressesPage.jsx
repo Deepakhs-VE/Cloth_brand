@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { MapPin, Plus, Trash2, Edit2, CheckCircle2 } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/common/Modal';
+import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
+import { useApplicationAlert } from '../context/ApplicationAlertContext';
 
 export const AddressesPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -76,6 +79,13 @@ export const AddressesPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isPhoneValid(formData.phone, true)) {
+      showAlert('Enter a valid contact phone number including the country code.', {
+        type: 'warning',
+        title: 'Invalid Phone Number',
+      });
+      return;
+    }
     try {
       if (editingAddress) {
         await api.put(`/users/addresses/${editingAddress._id}`, formData);
@@ -85,12 +95,16 @@ export const AddressesPage = () => {
       await loadAddresses();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving address');
+      showAlert(err.response?.data?.message || 'Error saving address');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you wish to delete this address?')) {
+    const confirmed = await showConfirm('This saved address will be permanently removed.', {
+      title: 'Delete Address?',
+      confirmLabel: 'Delete Address',
+    });
+    if (confirmed) {
       try {
         await api.delete(`/users/addresses/${id}`);
         await loadAddresses();
@@ -236,12 +250,10 @@ export const AddressesPage = () => {
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                 Phone *
               </label>
-              <input
-                type="text"
+              <InternationalPhoneInput
                 required
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                onChange={(phone) => setFormData({ ...formData, phone })}
               />
             </div>
           </div>

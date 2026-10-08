@@ -13,8 +13,12 @@ import {
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { useSettings } from '../../context/SettingsContext';
+import { InternationalPhoneInput, isPhoneValid } from '../../components/common/InternationalPhoneInput';
+import { ImageUpload } from '../../components/common/ImageUpload';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminSettingsPage = () => {
+  const { showAlert } = useApplicationAlert();
   const { refreshSettings } = useSettings();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,6 +28,7 @@ export const AdminSettingsPage = () => {
   const [settings, setSettings] = useState({
     brandName: '',
     tagline: '',
+    logoUrl: '',
     hero: {
       badge: '',
       title: '',
@@ -69,6 +74,9 @@ export const AdminSettingsPage = () => {
       refundPolicy: '',
       shippingPolicy: '',
     },
+    aboutUs: {
+      imageUrl: '',
+    },
   });
 
   useEffect(() => {
@@ -93,6 +101,18 @@ export const AdminSettingsPage = () => {
     setSaving(true);
     setSuccessMsg('');
 
+    if (
+      !isPhoneValid(settings.contactInfo?.phone, true) ||
+      !isPhoneValid(settings.contactInfo?.whatsappNumber, true)
+    ) {
+      showAlert('Enter valid support and WhatsApp numbers including their country codes.', {
+        type: 'warning',
+        title: 'Invalid Phone Number',
+      });
+      setSaving(false);
+      return;
+    }
+
     try {
       const res = await api.put('/settings', settings);
       if (res.data.success) {
@@ -101,7 +121,7 @@ export const AdminSettingsPage = () => {
         setTimeout(() => setSuccessMsg(''), 4000);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating settings');
+      showAlert(err.response?.data?.message || 'Error updating settings');
     } finally {
       setSaving(false);
     }
@@ -129,47 +149,52 @@ export const AdminSettingsPage = () => {
   return (
     <AdminLayout title="Brand Architecture & Global Settings">
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Top Save Bar */}
-        <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm sticky top-20 z-20">
-          <div className="flex items-center space-x-2">
-            {successMsg && (
-              <span className="flex items-center text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-bold border border-emerald-200">
-                <CheckCircle2 className="w-4 h-4 mr-1" /> {successMsg}
-              </span>
-            )}
+        {/* Sticky section navigation and save controls */}
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-sm sticky top-0 z-30 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-h-8 flex items-center">
+              {successMsg ? (
+                <span className="flex items-center text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-bold border border-emerald-200">
+                  <CheckCircle2 className="w-4 h-4 mr-1" /> {successMsg}
+                </span>
+              ) : (
+                <p className="text-xs font-semibold text-slate-600">Choose a settings section below</p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 sm:px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-wider font-bold transition flex items-center space-x-2 shadow-md disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              <span>{saving ? 'Saving...' : 'Save Settings'}</span>
+            </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-wider font-bold transition flex items-center space-x-2 shadow-md disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            <span>{saving ? 'Saving Changes...' : 'Save Settings'}</span>
-          </button>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex flex-wrap gap-2 p-1.5 bg-slate-200/60 rounded-2xl">
-          {tabs.map((t) => {
-            const Icon = t.icon;
-            const isActive = t.key === activeTab;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setActiveTab(t.key)}
-                className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition ${
-                  isActive
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
+          <div className="flex gap-2 overflow-x-auto border-t border-slate-100 pt-3 pb-1" role="tablist" aria-label="Settings sections">
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              const isActive = t.key === activeTab;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`flex-shrink-0 flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition ${
+                    isActive
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tab Content Boxes */}
@@ -202,6 +227,25 @@ export const AdminSettingsPage = () => {
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <ImageUpload
+                  label="Brand Logo"
+                  value={settings.logoUrl || ''}
+                  onChange={(logoUrl) => setSettings({ ...settings, logoUrl })}
+                  purpose="branding"
+                  aspectClass="aspect-[3/1]"
+                />
+                <ImageUpload
+                  label="About Section Image"
+                  value={settings.aboutUs?.imageUrl || ''}
+                  onChange={(imageUrl) => setSettings({
+                    ...settings,
+                    aboutUs: { ...settings.aboutUs, imageUrl },
+                  })}
+                  purpose="branding"
+                />
               </div>
 
               <div className="pt-6 border-t border-slate-100 space-y-4">
@@ -370,22 +414,17 @@ export const AdminSettingsPage = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
-                  Hero Background Image URL
-                </label>
-                <input
-                  type="text"
-                  value={settings.hero?.imageUrl || ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      hero: { ...settings.hero, imageUrl: e.target.value },
-                    })
-                  }
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
-                />
-              </div>
+              <ImageUpload
+                label="Hero Background Image"
+                value={settings.hero?.imageUrl || ''}
+                onChange={(imageUrl) => setSettings({
+                  ...settings,
+                  hero: { ...settings.hero, imageUrl },
+                })}
+                purpose="branding"
+                required
+                aspectClass="aspect-[16/7]"
+              />
             </div>
           )}
 
@@ -482,16 +521,15 @@ export const AdminSettingsPage = () => {
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
                     Support Phone Number
                   </label>
-                  <input
-                    type="text"
+                  <InternationalPhoneInput
+                    required
                     value={settings.contactInfo?.phone || ''}
-                    onChange={(e) =>
+                    onChange={(phone) =>
                       setSettings({
                         ...settings,
-                        contactInfo: { ...settings.contactInfo, phone: e.target.value },
+                        contactInfo: { ...settings.contactInfo, phone },
                       })
                     }
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                   />
                 </div>
               </div>
@@ -499,22 +537,20 @@ export const AdminSettingsPage = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
-                    WhatsApp Number (with country code, no symbols)
+                    WhatsApp Number
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 18008922872"
+                  <InternationalPhoneInput
+                    required
                     value={settings.contactInfo?.whatsappNumber || ''}
-                    onChange={(e) =>
+                    onChange={(whatsappNumber) =>
                       setSettings({
                         ...settings,
                         contactInfo: {
                           ...settings.contactInfo,
-                          whatsappNumber: e.target.value,
+                          whatsappNumber,
                         },
                       })
                     }
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
                   />
                 </div>
                 <div>

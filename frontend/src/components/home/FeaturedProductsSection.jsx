@@ -60,7 +60,7 @@ export const FeaturedProductsSection = () => {
         <div className="text-center mt-14">
           <Link
             to="/products"
-            className="inline-flex items-center space-x-2 px-8 py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-md"
+            className="pressable inline-flex items-center space-x-2 px-8 py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-md"
           >
             <span>Explore All Masterworks</span>
             <ArrowRight className="w-4 h-4" />

@@ -2,6 +2,7 @@ import express from 'express';
 import {
   validateCoupon,
   getCoupons,
+  getPublicCoupons,
   createCoupon,
   updateCoupon,
   deleteCoupon,
@@ -10,6 +11,7 @@ import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
+router.get('/public', getPublicCoupons);
 router.post('/validate', protect, validateCoupon);
 
 // Admin

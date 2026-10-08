@@ -68,7 +68,7 @@ export const CartPage = () => {
               >
                 <div className="flex items-center space-x-4">
                   <img
-                    src={item.product?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=200&q=80'}
+                    src={item.product?.image || '/image-placeholder.svg'}
                     alt={item.product?.name}
                     className="w-20 h-20 object-cover rounded-xl border border-slate-100 flex-shrink-0"
                   />

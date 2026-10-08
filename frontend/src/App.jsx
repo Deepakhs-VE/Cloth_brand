@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 
 // Providers
@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { ApplicationAlertProvider } from './context/ApplicationAlertContext';
 
 // Layout & Guards
 import { Navbar } from './components/layout/Navbar';
@@ -15,41 +16,53 @@ import { FloatingWhatsApp } from './components/layout/FloatingWhatsApp';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AdminRoute } from './components/layout/AdminRoute';
 
-// Public Pages
-import { HomePage } from './pages/HomePage';
-import { ProductsPage } from './pages/ProductsPage';
-import { ProductDetailPage } from './pages/ProductDetailPage';
-import { OffersPage } from './pages/OffersPage';
-import { AboutPage } from './pages/AboutPage';
-import { ContactPage } from './pages/ContactPage';
-import { PoliciesPage } from './pages/PoliciesPage';
-import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
+const lazyNamed = (importer, exportName) =>
+  lazy(() => importer().then((module) => ({ default: module[exportName] })));
 
-// Customer Protected Pages
-import { CartPage } from './pages/CartPage';
-import { CheckoutPage } from './pages/CheckoutPage';
-import { OrderSuccessPage } from './pages/OrderSuccessPage';
-import { AccountDashboardPage } from './pages/AccountDashboardPage';
-import { OrdersPage } from './pages/OrdersPage';
-import { OrderDetailPage } from './pages/OrderDetailPage';
-import { AddressesPage } from './pages/AddressesPage';
-import { WishlistPage } from './pages/WishlistPage';
-import { ProfilePage } from './pages/ProfilePage';
+// Route-level code splitting keeps the initial storefront bundle small.
+const HomePage = lazyNamed(() => import('./pages/HomePage'), 'HomePage');
+const ProductsPage = lazyNamed(() => import('./pages/ProductsPage'), 'ProductsPage');
+const ProductDetailPage = lazyNamed(() => import('./pages/ProductDetailPage'), 'ProductDetailPage');
+const OffersPage = lazyNamed(() => import('./pages/OffersPage'), 'OffersPage');
+const AboutPage = lazyNamed(() => import('./pages/AboutPage'), 'AboutPage');
+const ContactPage = lazyNamed(() => import('./pages/ContactPage'), 'ContactPage');
+const PoliciesPage = lazyNamed(() => import('./pages/PoliciesPage'), 'PoliciesPage');
+const LoginPage = lazyNamed(() => import('./pages/LoginPage'), 'LoginPage');
+const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'RegisterPage');
+const ForgotPasswordPage = lazyNamed(() => import('./pages/ForgotPasswordPage'), 'ForgotPasswordPage');
+const ResetPasswordPage = lazyNamed(() => import('./pages/ResetPasswordPage'), 'ResetPasswordPage');
+const CartPage = lazyNamed(() => import('./pages/CartPage'), 'CartPage');
+const CheckoutPage = lazyNamed(() => import('./pages/CheckoutPage'), 'CheckoutPage');
+const OrderSuccessPage = lazyNamed(() => import('./pages/OrderSuccessPage'), 'OrderSuccessPage');
+const AccountDashboardPage = lazyNamed(() => import('./pages/AccountDashboardPage'), 'AccountDashboardPage');
+const OrdersPage = lazyNamed(() => import('./pages/OrdersPage'), 'OrdersPage');
+const OrderDetailPage = lazyNamed(() => import('./pages/OrderDetailPage'), 'OrderDetailPage');
+const AddressesPage = lazyNamed(() => import('./pages/AddressesPage'), 'AddressesPage');
+const WishlistPage = lazyNamed(() => import('./pages/WishlistPage'), 'WishlistPage');
+const ProfilePage = lazyNamed(() => import('./pages/ProfilePage'), 'ProfilePage');
+const AdminDashboardPage = lazyNamed(() => import('./pages/admin/AdminDashboardPage'), 'AdminDashboardPage');
+const AdminProductsPage = lazyNamed(() => import('./pages/admin/AdminProductsPage'), 'AdminProductsPage');
+const AdminCategoriesPage = lazyNamed(() => import('./pages/admin/AdminCategoriesPage'), 'AdminCategoriesPage');
+const AdminOrdersPage = lazyNamed(() => import('./pages/admin/AdminOrdersPage'), 'AdminOrdersPage');
+const AdminUsersPage = lazyNamed(() => import('./pages/admin/AdminUsersPage'), 'AdminUsersPage');
+const AdminCouponsPage = lazyNamed(() => import('./pages/admin/AdminCouponsPage'), 'AdminCouponsPage');
+const AdminReviewsPage = lazyNamed(() => import('./pages/admin/AdminReviewsPage'), 'AdminReviewsPage');
+const AdminTestimonialsPage = lazyNamed(() => import('./pages/admin/AdminTestimonialsPage'), 'AdminTestimonialsPage');
+const AdminMessagesPage = lazyNamed(() => import('./pages/admin/AdminMessagesPage'), 'AdminMessagesPage');
+const AdminSettingsPage = lazyNamed(() => import('./pages/admin/AdminSettingsPage'), 'AdminSettingsPage');
 
-// Admin Protected Pages
-import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
-import { AdminProductsPage } from './pages/admin/AdminProductsPage';
-import { AdminCategoriesPage } from './pages/admin/AdminCategoriesPage';
-import { AdminOrdersPage } from './pages/admin/AdminOrdersPage';
-import { AdminUsersPage } from './pages/admin/AdminUsersPage';
-import { AdminCouponsPage } from './pages/admin/AdminCouponsPage';
-import { AdminReviewsPage } from './pages/admin/AdminReviewsPage';
-import { AdminTestimonialsPage } from './pages/admin/AdminTestimonialsPage';
-import { AdminMessagesPage } from './pages/admin/AdminMessagesPage';
-import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.querySelectorAll('[data-scroll-container]').forEach((container) => {
+      container.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+  }, [pathname]);
+
+  return null;
+}
 
 function AppContent() {
   const location = useLocation();
@@ -57,12 +70,15 @@ function AppContent() {
 
   return (
     <div className="flex flex-col min-h-screen">
+      <ScrollToTop />
       {!isAdminRoute && <Navbar />}
       <CartDrawer />
       {!isAdminRoute && <FloatingWhatsApp />}
 
       <main className="flex-1">
-        <Routes>
+        <div key={location.pathname} className="route-transition">
+          <Suspense fallback={<div className="min-h-[50vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /></div>}>
+          <Routes>
           {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
           <Route path="/products" element={<ProductsPage />} />
@@ -248,7 +264,9 @@ function AppContent() {
               </div>
             }
           />
-        </Routes>
+          </Routes>
+          </Suspense>
+        </div>
       </main>
 
       {!isAdminRoute && <Footer />}
@@ -258,14 +276,16 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <WishlistProvider>
-          <SettingsProvider>
-            <AppContent />
-          </SettingsProvider>
-        </WishlistProvider>
-      </CartProvider>
-    </AuthProvider>
+    <ApplicationAlertProvider>
+      <AuthProvider>
+        <CartProvider>
+          <WishlistProvider>
+            <SettingsProvider>
+              <AppContent />
+            </SettingsProvider>
+          </WishlistProvider>
+        </CartProvider>
+      </AuthProvider>
+    </ApplicationAlertProvider>
   );
 }

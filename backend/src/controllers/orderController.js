@@ -2,8 +2,8 @@ import { Order } from '../models/Order.js';
 import { Product } from '../models/Product.js';
 import { Cart } from '../models/Cart.js';
 import { Coupon } from '../models/Coupon.js';
-import { Payment } from '../models/Payment.js';
 import { emailService } from '../utils/emailService.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 // Helper to generate unique order number (e.g. AUR-202610-8291)
 const generateOrderNumber = () => {
@@ -14,15 +14,23 @@ const generateOrderNumber = () => {
 
 export const createOrder = async (req, res, next) => {
   try {
-    const {
-      shippingAddress,
-      paymentMethod = 'card_online',
-      couponCode,
-    } = req.body;
+    const { shippingAddress, paymentMethod = 'stripe', couponCode } = req.body;
+
+    if (paymentMethod !== 'stripe') {
+      return res.status(400).json({
+        success: false,
+        message: 'Stripe is the only supported payment method',
+      });
+    }
 
     if (!shippingAddress || !shippingAddress.streetAddress || !shippingAddress.city) {
       return res.status(400).json({ success: false, message: 'Complete shipping address is required' });
     }
+
+    shippingAddress.phone = normalizePhoneNumber(shippingAddress.phone, {
+      required: true,
+      fieldName: 'Shipping phone',
+    });
 
     // 1. Fetch user's cart
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
@@ -63,6 +71,7 @@ export const createOrder = async (req, res, next) => {
       orderItems.push({
         product: product._id,
         name: product.name,
+        slug: product.slug,
         image: product.images[0] || '',
         price: currentPrice,
         quantity: item.quantity,
@@ -146,53 +155,28 @@ export const createOrder = async (req, res, next) => {
       user: req.user._id,
       orderItems,
       shippingAddress,
-      paymentMethod,
-      paymentStatus: paymentMethod === 'cod' ? 'PENDING' : 'PAID', // In simulated card checkout, marked PAID
+      paymentMethod: 'stripe',
+      paymentStatus: 'PENDING',
       subtotal,
       discountAmount,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
       shippingAmount,
       taxAmount,
       totalAmount,
-      orderStatus: 'CONFIRMED',
+      orderStatus: 'PENDING',
       statusHistory: [
         {
           status: 'PENDING',
-          note: 'Order initiated',
-        },
-        {
-          status: 'CONFIRMED',
-          note: 'Payment verified and order confirmed',
+          note: 'Order created; awaiting secure Stripe payment',
         },
       ],
-      isPaid: paymentMethod !== 'cod',
-      paidAt: paymentMethod !== 'cod' ? new Date() : null,
+      isPaid: false,
+      paidAt: null,
     });
-
-    // 7. Create Payment record for transaction audit
-    await Payment.create({
-      order: order._id,
-      user: req.user._id,
-      amount: totalAmount,
-      currency: 'USD',
-      provider: paymentMethod === 'cod' ? 'cod' : 'mock_gateway',
-      transactionId: `TXN-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-      paymentStatus: paymentMethod === 'cod' ? 'PENDING' : 'SUCCESS',
-      gatewayResponse: { paymentMethod, verified: true },
-    });
-
-    // 8. Clear user cart
-    cart.items = [];
-    await cart.save();
-
-    // 9. Send order confirmation email
-    emailService.sendOrderConfirmationEmail(order, req.user).catch((err) =>
-      console.error('Order email error:', err)
-    );
 
     res.status(201).json({
       success: true,
-      message: 'Order placed successfully',
+      message: 'Order created. Continue to Stripe to complete payment.',
       order,
     });
   } catch (error) {
@@ -202,8 +186,26 @@ export const createOrder = async (req, res, next) => {
 
 export const getMyOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, count: orders.length, orders });
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 6));
+    const query = { user: req.user._id };
+    const total = await Order.countDocuments(query);
+    const pages = Math.ceil(total / limitNum) || 1;
+    const safePage = Math.min(pageNum, pages);
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * limitNum)
+      .limit(limitNum);
+
+    res.status(200).json({
+      success: true,
+      count: orders.length,
+      total,
+      page: safePage,
+      pages,
+      orders,
+    });
   } catch (error) {
     next(error);
   }
@@ -237,6 +239,21 @@ export const cancelOrder = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
+    if (order.orderStatus === 'CANCELLED') {
+      return res.status(200).json({
+        success: true,
+        message: 'Order is already cancelled',
+        order,
+      });
+    }
+
+    if (order.isPaid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paid Stripe orders must be refunded by an administrator before cancellation',
+      });
+    }
+
     // Cancellation business rule: Customer can only cancel if status is PENDING or CONFIRMED
     const cancellableStatuses = ['PENDING', 'CONFIRMED'];
     if (!cancellableStatuses.includes(order.orderStatus)) {
@@ -263,9 +280,180 @@ export const cancelOrder = async (req, res, next) => {
       });
     }
 
+    if (order.couponCode) {
+      const coupon = await Coupon.findOne({ code: order.couponCode });
+      if (coupon) {
+        coupon.usageCount = Math.max(0, coupon.usageCount - 1);
+        const userUsage = coupon.usedBy.find(
+          (entry) => entry.user.toString() === req.user._id.toString()
+        );
+        if (userUsage) {
+          userUsage.count = Math.max(0, userUsage.count - 1);
+        }
+        await coupon.save();
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Order cancelled successfully and stock restored',
+      order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requestRefund = async (req, res, next) => {
+  try {
+    const reason = String(req.body.reason || '').trim();
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (reason.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a clear reason of at least 10 characters',
+      });
+    }
+
+    if (!order.isPaid || order.paymentStatus !== 'PAID') {
+      return res.status(400).json({
+        success: false,
+        message: 'This order has no completed Stripe payment to refund',
+      });
+    }
+
+    if (['CANCELLED', 'REFUNDED'].includes(order.orderStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `This order is already ${order.orderStatus.toLowerCase()}`,
+      });
+    }
+
+    const activeRequestStatuses = [
+      'REQUESTED',
+      'APPROVED',
+      'RECEIVED',
+      'REFUND_PENDING',
+      'COMPLETED',
+    ];
+    if (order.refundRequest && activeRequestStatuses.includes(order.refundRequest.status)) {
+      return res.status(409).json({
+        success: false,
+        message: `A refund request is already ${order.refundRequest.status.toLowerCase().replace(/_/g, ' ')}`,
+      });
+    }
+
+    const preShipmentStatuses = ['PENDING', 'CONFIRMED', 'PROCESSING'];
+    let requestType;
+
+    if (preShipmentStatuses.includes(order.orderStatus)) {
+      requestType = 'CANCELLATION';
+    } else if (order.orderStatus === 'DELIVERED') {
+      const deliveredAt = order.deliveredAt || order.updatedAt;
+      const returnWindowEndsAt = new Date(deliveredAt).getTime() + 30 * 24 * 60 * 60 * 1000;
+      if (Date.now() > returnWindowEndsAt) {
+        return res.status(400).json({
+          success: false,
+          message: 'The 30-day return window for this order has expired',
+        });
+      }
+      requestType = 'RETURN';
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Orders in transit cannot be cancelled. Request a return after delivery or contact support.',
+      });
+    }
+
+    order.refundRequest = {
+      type: requestType,
+      status: 'REQUESTED',
+      reason,
+      requestedAt: new Date(),
+    };
+    order.statusHistory.push({
+      status: order.orderStatus,
+      note: `${requestType === 'RETURN' ? 'Return' : 'Cancellation'} and refund requested by customer`,
+    });
+    await order.save();
+
+    res.status(201).json({
+      success: true,
+      message: requestType === 'RETURN'
+        ? 'Return request submitted for administrator review'
+        : 'Cancellation and refund request submitted for administrator review',
+      order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reviewRefundRequestAdmin = async (req, res, next) => {
+  try {
+    const action = String(req.body.action || '').toUpperCase();
+    const adminNote = String(req.body.adminNote || '').trim();
+    const order = await Order.findById(req.params.id).populate('user', 'name email');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    if (!order.refundRequest) {
+      return res.status(404).json({ success: false, message: 'No refund request exists for this order' });
+    }
+
+    if (action === 'APPROVE' || action === 'REJECT') {
+      if (order.refundRequest.status !== 'REQUESTED') {
+        return res.status(409).json({
+          success: false,
+          message: 'Only a pending refund request can be approved or rejected',
+        });
+      }
+      if (action === 'REJECT' && adminNote.length < 5) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a reason for rejecting this request',
+        });
+      }
+
+      order.refundRequest.status = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      order.refundRequest.adminNote = adminNote;
+      order.refundRequest.reviewedAt = new Date();
+    } else if (action === 'MARK_RECEIVED') {
+      if (order.refundRequest.type !== 'RETURN' || order.refundRequest.status !== 'APPROVED') {
+        return res.status(409).json({
+          success: false,
+          message: 'Only an approved delivered-order return can be marked as received',
+        });
+      }
+      order.refundRequest.status = 'RECEIVED';
+      order.refundRequest.adminNote = adminNote || order.refundRequest.adminNote;
+      order.refundRequest.receivedAt = new Date();
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Action must be APPROVE, REJECT, or MARK_RECEIVED',
+      });
+    }
+
+    order.statusHistory.push({
+      status: order.orderStatus,
+      note: `Refund request ${order.refundRequest.status.toLowerCase().replace(/_/g, ' ')}${adminNote ? `: ${adminNote}` : ''}`,
+    });
+    await order.save();
+
+    emailService.sendRefundUpdateEmail(order, order.user).catch((error) =>
+      console.error('Refund request email error:', error)
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Refund request ${order.refundRequest.status.toLowerCase().replace(/_/g, ' ')}`,
       order,
     });
   } catch (error) {
@@ -334,6 +522,52 @@ export const updateOrderStatusAdmin = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid order status' });
     }
 
+    if (status === 'REFUNDED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Use the Stripe refund endpoint so the customer is actually refunded before the order is updated',
+      });
+    }
+
+    if (status === 'CANCELLED' && order.isPaid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paid Stripe orders must be refunded, not manually cancelled',
+      });
+    }
+
+    const allowedTransitions = {
+      PENDING: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['PROCESSING', 'CANCELLED'],
+      PROCESSING: ['SHIPPED', 'CANCELLED'],
+      SHIPPED: ['OUT_FOR_DELIVERY'],
+      OUT_FOR_DELIVERY: ['DELIVERED'],
+      DELIVERED: [],
+      CANCELLED: [],
+      REFUNDED: [],
+    };
+
+    if (
+      status !== order.orderStatus &&
+      !allowedTransitions[order.orderStatus]?.includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Order cannot move from ${order.orderStatus} to ${status}`,
+      });
+    }
+
+    if (
+      ['REQUESTED', 'APPROVED'].includes(order.refundRequest?.status) &&
+      order.refundRequest?.type === 'CANCELLATION' &&
+      status !== order.orderStatus
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: 'Resolve the active cancellation/refund request before continuing fulfillment',
+      });
+    }
+
     const previousStatus = order.orderStatus;
     order.orderStatus = status;
 
@@ -358,10 +592,18 @@ export const updateOrderStatusAdmin = async (req, res, next) => {
           $inc: { stock: item.quantity },
         });
       }
-    }
 
-    if (status === 'REFUNDED') {
-      order.paymentStatus = 'REFUNDED';
+      if (order.couponCode) {
+        const coupon = await Coupon.findOne({ code: order.couponCode });
+        if (coupon) {
+          coupon.usageCount = Math.max(0, coupon.usageCount - 1);
+          const userUsage = coupon.usedBy.find(
+            (entry) => entry.user.toString() === order.user._id.toString()
+          );
+          if (userUsage) userUsage.count = Math.max(0, userUsage.count - 1);
+          await coupon.save();
+        }
+      }
     }
 
     order.statusHistory.push({

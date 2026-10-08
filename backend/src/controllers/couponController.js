@@ -82,6 +82,33 @@ export const getCoupons = async (req, res, next) => {
   }
 };
 
+// Public storefront endpoint. Only expose coupons that a customer can use now,
+// and never expose per-user usage records or internal administration fields.
+export const getPublicCoupons = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const coupons = await Coupon.find({
+      isActive: true,
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+      $or: [
+        { usageLimit: null },
+        { usageLimit: { $exists: false } },
+        { $expr: { $lt: [{ $ifNull: ['$usageCount', 0] }, '$usageLimit'] } },
+      ],
+    })
+      .select(
+        'code discountType discountValue minOrderAmount maxDiscountAmount startDate endDate description'
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({ success: true, count: coupons.length, coupons });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createCoupon = async (req, res, next) => {
   try {
     const {

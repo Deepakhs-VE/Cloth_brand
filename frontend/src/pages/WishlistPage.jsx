@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Heart, ShoppingBag, Trash2, ArrowRight } from 'lucide-react';
 import { useWishlist } from '../context/WishlistContext';
 import { EmptyState } from '../components/common/EmptyState';
+import { getProductPath } from '../utils/productPath';
 
 export const WishlistPage = () => {
   const { wishlist, removeFromWishlist, moveToCart, loading } = useWishlist();
@@ -38,18 +39,19 @@ export const WishlistPage = () => {
             const hasDiscount = product.discountPrice !== null && product.discountPrice < product.price;
             const activePrice = hasDiscount ? product.discountPrice : product.price;
             const isOutOfStock = product.stock <= 0;
+            const productPath = getProductPath(product);
 
             return (
               <div
                 key={product._id}
-                className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+                className="motion-card group bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
               >
                 <div className="relative aspect-[4/5] bg-slate-100">
-                  <Link to={`/products/${product.slug}`}>
+                  <Link to={productPath} className="block h-full overflow-hidden">
                     <img
-                      src={product.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80'}
+                      src={product.images?.[0] || '/image-placeholder.svg'}
                       alt={product.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                     />
                   </Link>
                   <button
@@ -64,7 +66,7 @@ export const WishlistPage = () => {
                 <div className="p-5 flex flex-col flex-1 justify-between">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900 line-clamp-1 mb-1">
-                      <Link to={`/products/${product.slug}`} className="hover:text-amber-700 transition">
+                      <Link to={productPath} className="hover:text-amber-700 transition">
                         {product.name}
                       </Link>
                     </h3>
@@ -80,14 +82,23 @@ export const WishlistPage = () => {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => moveToCart(product._id)}
-                    disabled={isOutOfStock}
-                    className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center space-x-2"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>{isOutOfStock ? 'Sold Out' : 'Move to Bag'}</span>
-                  </button>
+                  <div className="space-y-2">
+                    <Link
+                      to={productPath}
+                      className="flex w-full items-center justify-center space-x-2 rounded-xl border border-slate-200 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-800 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <span>View Product</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                    <button
+                      onClick={() => moveToCart(product._id)}
+                      disabled={isOutOfStock}
+                      className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs uppercase tracking-wider font-bold rounded-xl transition flex items-center justify-center space-x-2"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>{isOutOfStock ? 'Sold Out' : 'Move to Bag'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );

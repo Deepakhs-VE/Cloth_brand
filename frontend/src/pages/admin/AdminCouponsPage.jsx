@@ -3,8 +3,11 @@ import { Tag, Plus, Edit2, Trash2, Calendar, CheckCircle } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
+import { SelectDropdown } from '../../components/common/SelectDropdown';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminCouponsPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -96,17 +99,21 @@ export const AdminCouponsPage = () => {
       await loadCoupons();
       setModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving coupon');
+      showAlert(err.response?.data?.message || 'Error saving coupon');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you wish to delete this coupon?')) {
+    const confirmed = await showConfirm(
+      'Customers will no longer be able to use this promotional code.',
+      { title: 'Delete Coupon?', confirmLabel: 'Delete Coupon' }
+    );
+    if (confirmed) {
       try {
         await api.delete(`/coupons/${id}`);
         await loadCoupons();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error deleting coupon');
+        showAlert(err.response?.data?.message || 'Error deleting coupon');
       }
     }
   };
@@ -209,14 +216,16 @@ export const AdminCouponsPage = () => {
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                 Discount Type *
               </label>
-              <select
+              <SelectDropdown
                 value={formData.discountType}
-                onChange={(e) => setFormData({ ...formData, discountType: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-              >
-                <option value="percentage">Percentage (%)</option>
-                <option value="fixed">Fixed Amount ($)</option>
-              </select>
+                onChange={(discountType) => setFormData({ ...formData, discountType })}
+                options={[
+                  { value: 'percentage', label: 'Percentage (%)' },
+                  { value: 'fixed', label: 'Fixed Amount ($)' },
+                ]}
+                ariaLabel="Discount type"
+                required
+              />
             </div>
             <div>
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">

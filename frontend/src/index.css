@@ -38,3 +38,132 @@
 .animate-fade-in {
   animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Restrained motion system: short, one-time reveals and subtle interaction feedback. */
+@keyframes routeEnter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes heroReveal {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes heroImageSettle {
+  from { transform: scale(1.055); filter: saturate(0.88); }
+  to { transform: scale(1); filter: saturate(1); }
+}
+
+@keyframes attentionPulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  55% { opacity: 0; transform: scale(2.1); }
+}
+
+.route-transition {
+  animation: routeEnter 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-image-settle {
+  animation: heroImageSettle 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
+}
+
+.hero-reveal {
+  opacity: 0;
+  animation: heroReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hero-delay-1 { animation-delay: 100ms; }
+.hero-delay-2 { animation-delay: 190ms; }
+.hero-delay-3 { animation-delay: 280ms; }
+.hero-delay-4 { animation-delay: 370ms; }
+.hero-delay-5 { animation-delay: 460ms; }
+
+.reveal-section {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.reveal-section.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.pressable {
+  transition-property: color, background-color, border-color, box-shadow, transform;
+  transition-duration: 200ms;
+}
+
+.pressable:active {
+  transform: scale(0.975);
+}
+
+.motion-card,
+.feature-item,
+.feature-icon {
+  will-change: transform;
+}
+
+.feature-item,
+.feature-icon {
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), background-color 300ms ease;
+}
+
+.attention-pulse {
+  animation: attentionPulse 2.4s ease-out 3;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .motion-card:hover {
+    transform: translateY(-5px);
+  }
+
+  .feature-item:hover {
+    transform: translateY(-2px);
+    background-color: rgb(248 250 252 / 0.7);
+  }
+
+  .feature-item:hover .feature-icon {
+    transform: translateY(-2px) rotate(-2deg);
+    background-color: rgb(255 251 235);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .reveal-section,
+  .hero-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+.international-phone-input {
+  @apply w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs transition;
+}
+
+.international-phone-input:focus {
+  @apply ring-1 ring-slate-900 border-slate-300;
+}
+
+.international-phone-input--invalid {
+  @apply border-rose-300 bg-rose-50/40;
+}
+

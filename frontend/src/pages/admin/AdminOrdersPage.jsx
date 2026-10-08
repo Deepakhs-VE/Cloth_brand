@@ -8,14 +8,18 @@ import {
   Truck,
   Edit2,
   Calendar,
+  RotateCcw,
 } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { OrderStatusBadge } from '../../components/common/Badge';
 import { Modal } from '../../components/common/Modal';
 import { Pagination } from '../../components/common/Pagination';
+import { SelectDropdown } from '../../components/common/SelectDropdown';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminOrdersPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
@@ -31,6 +35,11 @@ export const AdminOrdersPage = () => {
   const [trackingNumber, setTrackingNumber] = useState('');
   const [statusNote, setStatusNote] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [refundingOrderId, setRefundingOrderId] = useState('');
+  const [refundRequestOrder, setRefundRequestOrder] = useState(null);
+  const [refundRequestModalOpen, setRefundRequestModalOpen] = useState(false);
+  const [refundAdminNote, setRefundAdminNote] = useState('');
+  const [reviewingRefund, setReviewingRefund] = useState(false);
 
   const loadOrders = async () => {
     try {
@@ -83,9 +92,70 @@ export const AdminOrdersPage = () => {
         setModalOpen(false);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating order status');
+      showAlert(err.response?.data?.message || 'Error updating order status');
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleRefund = async (order) => {
+    const confirmed = await showConfirm(
+      `A full refund of $${order.totalAmount.toFixed(2)} will be issued through Stripe for order ${order.orderNumber}. This action cannot be reversed.`,
+      {
+        title: 'Confirm Stripe Refund',
+        confirmLabel: `Refund $${order.totalAmount.toFixed(2)}`,
+      }
+    );
+    if (!confirmed) return;
+
+    setRefundingOrderId(order._id);
+    try {
+      const response = await api.post('/payments/refund', {
+        orderId: order._id,
+        reason: 'Full refund approved from the admin order console',
+      });
+      if (response.data.success) {
+        await loadOrders();
+        setRefundRequestModalOpen(false);
+      }
+    } catch (error) {
+      showAlert(error.response?.data?.message || 'Stripe refund failed', {
+        title: 'Refund Failed',
+      });
+    } finally {
+      setRefundingOrderId('');
+    }
+  };
+
+  const openRefundRequest = (order) => {
+    setRefundRequestOrder(order);
+    setRefundAdminNote(order.refundRequest?.adminNote || '');
+    setRefundRequestModalOpen(true);
+  };
+
+  const handleRefundRequestAction = async (action) => {
+    if (action === 'REJECT' && refundAdminNote.trim().length < 5) {
+      showAlert('Please provide a reason before rejecting the request.', {
+        type: 'warning',
+        title: 'Reason Required',
+      });
+      return;
+    }
+
+    setReviewingRefund(true);
+    try {
+      const response = await api.patch(
+        `/orders/admin/${refundRequestOrder._id}/refund-request`,
+        { action, adminNote: refundAdminNote }
+      );
+      if (response.data.success) {
+        setRefundRequestOrder(response.data.order);
+        await loadOrders();
+      }
+    } catch (error) {
+      showAlert(error.response?.data?.message || 'Could not update the refund request');
+    } finally {
+      setReviewingRefund(false);
     }
   };
 
@@ -100,6 +170,17 @@ export const AdminOrdersPage = () => {
     'REFUNDED',
   ];
 
+  const allowedStatusTransitions = {
+    PENDING: ['CONFIRMED', 'CANCELLED'],
+    CONFIRMED: ['PROCESSING', 'CANCELLED'],
+    PROCESSING: ['SHIPPED', 'CANCELLED'],
+    SHIPPED: ['OUT_FOR_DELIVERY'],
+    OUT_FOR_DELIVERY: ['DELIVERED'],
+    DELIVERED: [],
+    CANCELLED: [],
+    REFUNDED: [],
+  };
+
   return (
     <AdminLayout title="Fulfillment & Order Control">
       <div className="space-y-6">
@@ -110,7 +191,10 @@ export const AdminOrdersPage = () => {
               type="text"
               placeholder="Search by order number or customer name..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -118,21 +202,22 @@ export const AdminOrdersPage = () => {
 
           <div className="flex items-center space-x-2 w-full sm:w-auto">
             <Filter className="w-4 h-4 text-slate-400" />
-            <select
+            <SelectDropdown
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
+              onChange={(nextStatus) => {
+                setStatusFilter(nextStatus);
                 setPage(1);
               }}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
-            >
-              <option value="">All Statuses</option>
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'All Statuses' },
+                ...statusOptions.map((status) => ({
+                  value: status,
+                  label: status.replace(/_/g, ' '),
+                })),
+              ]}
+              ariaLabel="Filter orders by status"
+              className="w-full sm:w-48"
+            />
           </div>
         </div>
 
@@ -168,12 +253,21 @@ export const AdminOrdersPage = () => {
                     </td>
                     <td className="py-4 px-4">
                       <OrderStatusBadge status={o.orderStatus} />
+                      {o.refundRequest && !['REJECTED', 'COMPLETED'].includes(o.refundRequest.status) && (
+                        <button
+                          onClick={() => openRefundRequest(o)}
+                          className="mt-1.5 flex items-center gap-1 text-[9px] font-bold uppercase text-amber-700 hover:text-amber-900"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          {o.refundRequest.type} {o.refundRequest.status.replace(/_/g, ' ')}
+                        </button>
+                      )}
                     </td>
                     <td className="py-4 px-4">
                       <span className="font-bold uppercase text-[10px] text-slate-700">
                         {o.paymentMethod} •{' '}
-                        <span className={o.isPaid ? 'text-emerald-600' : 'text-amber-600'}>
-                          {o.isPaid ? 'PAID' : 'PENDING'}
+                        <span className={o.paymentStatus === 'PAID' ? 'text-emerald-600' : 'text-amber-600'}>
+                          {o.paymentStatus}
                         </span>
                       </span>
                     </td>
@@ -181,12 +275,24 @@ export const AdminOrdersPage = () => {
                       ${o.totalAmount.toFixed(2)}
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => handleOpenStatusModal(o)}
-                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold uppercase transition"
-                      >
-                        Update
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        {o.refundRequest && !['REJECTED', 'COMPLETED'].includes(o.refundRequest.status) && (
+                          <button
+                            onClick={() => openRefundRequest(o)}
+                            className="px-3 py-1.5 border border-amber-200 text-amber-800 hover:bg-amber-50 rounded-lg text-[11px] font-bold uppercase transition"
+                          >
+                            Refund Request
+                          </button>
+                        )}
+                        {o.orderStatus !== 'REFUNDED' && (
+                          <button
+                            onClick={() => handleOpenStatusModal(o)}
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold uppercase transition"
+                          >
+                            Update
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -211,18 +317,23 @@ export const AdminOrdersPage = () => {
             <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
               Order Status *
             </label>
-            <select
-              required
+            <SelectDropdown
               value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
-            >
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
+              onChange={setNewStatus}
+              options={[
+                selectedOrder?.orderStatus,
+                ...(allowedStatusTransitions[selectedOrder?.orderStatus] || []),
+              ]
+                .filter(Boolean)
+                .filter((status, index, values) => values.indexOf(status) === index)
+                .filter((status) => !(selectedOrder?.isPaid && status === 'CANCELLED'))
+                .map((status) => ({
+                  value: status,
+                  label: status.replace(/_/g, ' '),
+                }))}
+              ariaLabel="Order status"
+              required
+            />
           </div>
 
           <div>
@@ -272,6 +383,93 @@ export const AdminOrdersPage = () => {
             {updating ? 'Saving Status...' : 'Apply Status Update'}
           </button>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={refundRequestModalOpen}
+        onClose={() => setRefundRequestModalOpen(false)}
+        title={`Refund Request #${refundRequestOrder?.orderNumber || ''}`}
+      >
+        {refundRequestOrder?.refundRequest && (
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-950 space-y-2">
+              <div className="flex justify-between gap-3">
+                <span className="font-bold uppercase">{refundRequestOrder.refundRequest.type}</span>
+                <span className="font-bold uppercase">{refundRequestOrder.refundRequest.status.replace(/_/g, ' ')}</span>
+              </div>
+              <p><strong>Customer reason:</strong> {refundRequestOrder.refundRequest.reason}</p>
+              <p><strong>Full refund:</strong> ${refundRequestOrder.totalAmount.toFixed(2)}</p>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
+                Administrator Note
+              </label>
+              <textarea
+                rows={3}
+                value={refundAdminNote}
+                onChange={(event) => setRefundAdminNote(event.target.value)}
+                placeholder="Return instructions, approval notes, or rejection reason"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+              />
+            </div>
+
+            {refundRequestOrder.refundRequest.status === 'REQUESTED' && (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={reviewingRefund}
+                  onClick={() => handleRefundRequestAction('REJECT')}
+                  className="py-3 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-xl text-xs uppercase font-bold disabled:opacity-50"
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  disabled={reviewingRefund}
+                  onClick={() => handleRefundRequestAction('APPROVE')}
+                  className="py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl text-xs uppercase font-bold disabled:opacity-50"
+                >
+                  Approve
+                </button>
+              </div>
+            )}
+
+            {refundRequestOrder.refundRequest.type === 'RETURN' &&
+              refundRequestOrder.refundRequest.status === 'APPROVED' && (
+                <button
+                  type="button"
+                  disabled={reviewingRefund}
+                  onClick={() => handleRefundRequestAction('MARK_RECEIVED')}
+                  className="w-full py-3 bg-amber-600 text-white hover:bg-amber-500 rounded-xl text-xs uppercase font-bold disabled:opacity-50"
+                >
+                  Mark Returned Parcel Received
+                </button>
+              )}
+
+            {((refundRequestOrder.refundRequest.type === 'CANCELLATION' &&
+              refundRequestOrder.refundRequest.status === 'APPROVED') ||
+              (refundRequestOrder.refundRequest.type === 'RETURN' &&
+                refundRequestOrder.refundRequest.status === 'RECEIVED')) && (
+              <button
+                type="button"
+                disabled={refundingOrderId === refundRequestOrder._id}
+                onClick={() => handleRefund(refundRequestOrder)}
+                className="w-full py-3 bg-rose-600 text-white hover:bg-rose-500 rounded-xl text-xs uppercase font-bold disabled:opacity-50"
+              >
+                {refundingOrderId === refundRequestOrder._id
+                  ? 'Refunding Through Stripe...'
+                  : `Issue Full Stripe Refund ($${refundRequestOrder.totalAmount.toFixed(2)})`}
+              </button>
+            )}
+
+            {refundRequestOrder.refundRequest.status === 'REFUND_PENDING' && (
+              <p className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600">
+                Stripe is processing this refund. The order will update automatically through the webhook.
+              </p>
+            )}
+          </div>
+        )}
       </Modal>
     </AdminLayout>
   );

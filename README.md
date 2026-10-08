@@ -9,6 +9,7 @@ A production-ready, full-stack e-commerce and business website architecture buil
 - **100% Dynamic Business Data**: All products, categories, prices, offers, testimonials, reviews, inquiries, users, and site configurations are stored and fetched dynamically from MongoDB.
 - **Enterprise Authentication & RBAC**: JWT Access & Refresh Token architecture with bcrypt password hashing, token expiration, and role-based access control (`customer` and `admin`).
 - **Server-Side Price & Inventory Integrity**: The shopping cart and checkout recalculate all totals from the MongoDB database to prevent frontend tampering.
+- **Secure Stripe Checkout**: Hosted Stripe Checkout keeps card data out of the application, with server-side session verification, signed webhooks, and Stripe-backed refunds.
 - **Inventory & Stock Management**: Stock counts are validated before checkout, automatically reduced upon order confirmation, and restored upon cancellation.
 - **Comprehensive Admin Console**: Live KPI metric cards (revenue, orders, users, low stock warnings), product CRUD, category CRUD, order tracking status management, user role moderation, coupon management, review approval, testimonial editor, and brand settings.
 - **Promotional Coupons**: Percentage and fixed discount coupons with minimum spend thresholds, usage limits, and per-user limits.
@@ -27,15 +28,63 @@ A production-ready, full-stack e-commerce and business website architecture buil
 ```bash
 cd backend
 npm install
+copy .env.example .env  # Windows; then add your MongoDB, JWT, Stripe, and email values
 npm run seed     # Populates initial dynamic business data & accounts
 npm run dev      # Runs API server on http://localhost:5000 (watch mode)
 ```
+
+For local Stripe webhook testing, forward events to the raw webhook endpoint and copy the printed `whsec_...` value into `STRIPE_WEBHOOK_SECRET`:
+
+```bash
+stripe listen --forward-to localhost:5000/api/webhooks/stripe
+```
+
+### SMTP email setup
+
+Set real SMTP credentials in `backend/.env`. For Gmail, use an App Password rather than your normal account password:
+
+```env
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_MODE=smtp
+EMAIL_USER=your-address@gmail.com
+EMAIL_PASS=your-16-character-app-password
+EMAIL_FROM="AURA Concierge" <your-address@gmail.com>
+ALLOW_DEV_RESET_TOKEN=false
+```
+
+Send a real test message before testing password recovery:
+
+```bash
+cd backend
+npm run email:test -- customer@example.com
+```
+
+### Image storage
+
+Admin image fields upload JPEG, PNG, or WebP files (maximum 8 MB each). Images are validated, resized, converted to WebP, and stored in `backend/uploads` while local storage is enabled:
+
+```env
+IMAGE_STORAGE_PROVIDER=local
+```
+
+The upload directory is intentionally ignored by Git. Back it up separately when deploying to a server with persistent disk. To switch to AWS S3 later, set the following values; application and admin UI code do not need to change:
+
+```env
+IMAGE_STORAGE_PROVIDER=s3
+AWS_REGION=ap-south-1
+AWS_S3_BUCKET=your-bucket-name
+AWS_CDN_URL=https://your-cloudfront-domain.example.com
+```
+
+On AWS, prefer an EC2/ECS IAM role. Use access-key environment variables only when an IAM role is unavailable.
 
 ### 3. Frontend Setup
 ```bash
 cd ../frontend
 npm install
-npm run dev      # Runs Vite dev server on http://localhost:5173
+npm run dev      # Runs Vite dev server on http://localhost:5174
 ```
 
 ---

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidInternationalPhone } from '../utils/phone.js';
 
 const siteSettingsSchema = new mongoose.Schema(
   {
@@ -28,7 +29,7 @@ const siteSettingsSchema = new mongoose.Schema(
       secondaryCtaLink: { type: String, default: '/offers' },
       imageUrl: {
         type: String,
-        default: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80',
+        default: '/image-placeholder.svg',
       },
     },
     specialOfferBanner: {
@@ -44,8 +45,16 @@ const siteSettingsSchema = new mongoose.Schema(
     },
     contactInfo: {
       email: { type: String, default: 'concierge@aurastore.com' },
-      phone: { type: String, default: '+1 (800) 892-2872' },
-      whatsappNumber: { type: String, default: '+18008922872' },
+      phone: {
+        type: String,
+        default: '+91 6366592991',
+        validate: { validator: isValidInternationalPhone, message: 'Support phone must be valid' },
+      },
+      whatsappNumber: {
+        type: String,
+        default: '+91 6366592991',
+        validate: { validator: isValidInternationalPhone, message: 'WhatsApp number must be valid' },
+      },
       address: { type: String, default: '450 Lexington Avenue, Suite 1800, New York, NY 10017' },
       workingHours: { type: String, default: 'Mon - Sat: 9:00 AM - 8:00 PM EST' },
     },
@@ -72,7 +81,7 @@ const siteSettingsSchema = new mongoose.Schema(
       },
       refundPolicy: {
         type: String,
-        default: 'We offer an unconditional 30-day return policy for unused items in their original packaging...',
+        default: 'Unpaid orders may be cancelled before fulfillment. Paid orders that have not shipped require an approved cancellation request before the original Stripe payment is refunded. Orders in transit cannot be cancelled. Delivered orders may be returned within 30 days; refunds are issued to the original payment method after the return is approved, received, and inspected.',
       },
       shippingPolicy: {
         type: String,
@@ -133,7 +142,7 @@ const siteSettingsSchema = new mongoose.Schema(
       },
       imageUrl: {
         type: String,
-        default: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
+        default: '/image-placeholder.svg',
       },
     },
   },

@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { Address } from '../models/Address.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 export const getProfile = async (req, res, next) => {
   try {
@@ -16,7 +17,7 @@ export const updateProfile = async (req, res, next) => {
     const user = await User.findById(req.user._id);
 
     if (name) user.name = name;
-    if (phone !== undefined) user.phone = phone;
+    if (phone !== undefined) user.phone = normalizePhoneNumber(phone);
     if (avatar) user.avatar = avatar;
 
     await user.save();
@@ -62,7 +63,7 @@ export const addAddress = async (req, res, next) => {
     const address = await Address.create({
       user: req.user._id,
       fullName,
-      phone,
+      phone: normalizePhoneNumber(phone, { required: true, fieldName: 'Contact phone' }),
       streetAddress,
       apartment: apartment || '',
       city,
@@ -91,7 +92,14 @@ export const updateAddress = async (req, res, next) => {
       await Address.updateMany({ user: req.user._id }, { isDefault: false });
     }
 
-    Object.assign(address, req.body);
+    const updates = { ...req.body };
+    if (updates.phone !== undefined) {
+      updates.phone = normalizePhoneNumber(updates.phone, {
+        required: true,
+        fieldName: 'Contact phone',
+      });
+    }
+    Object.assign(address, updates);
     await address.save();
 
     res.status(200).json({ success: true, message: 'Address updated successfully', address });

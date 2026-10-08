@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidInternationalPhone } from '../utils/phone.js';
 
 const addressSchema = new mongoose.Schema(
   {
@@ -16,6 +17,10 @@ const addressSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Contact phone is required'],
       trim: true,
+      validate: {
+        validator: isValidInternationalPhone,
+        message: 'Contact phone must be valid for its country',
+      },
     },
     streetAddress: {
       type: String,

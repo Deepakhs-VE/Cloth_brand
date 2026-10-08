@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Mail, Phone, MapPin, Clock, MessageCircle, Send, CheckCircle } from 'lucide-react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
 
 export const ContactPage = () => {
   const { settings } = useSettings();
@@ -20,8 +21,8 @@ export const ContactPage = () => {
 
   const contactInfo = settings?.contactInfo || {
     email: 'concierge@aurastore.com',
-    phone: '+1 (800) 892-2872',
-    whatsappNumber: '+18008922872',
+    phone: '+91 6366592991',
+    whatsappNumber: '+91 6366592991',
     address: '450 Lexington Avenue, Suite 1800, New York, NY 10017',
     workingHours: 'Mon - Sat: 9:00 AM - 8:00 PM EST',
   };
@@ -33,6 +34,12 @@ export const ContactPage = () => {
     setSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (!isPhoneValid(formData.phone)) {
+      setErrorMsg('Enter a valid phone number including the country code');
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await api.post('/contact', formData);
@@ -180,12 +187,9 @@ export const ContactPage = () => {
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
                       Contact Phone
                     </label>
-                    <input
-                      type="tel"
+                    <InternationalPhoneInput
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="+1 (555) 000-0000"
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      onChange={(phone) => setFormData({ ...formData, phone })}
                     />
                   </div>
                   <div>

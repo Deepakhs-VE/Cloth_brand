@@ -205,6 +205,13 @@ export const createProduct = async (req, res, next) => {
       });
     }
 
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload at least one product image',
+      });
+    }
+
     let slug = slugify(name, { lower: true, strict: true });
     // Check if slug exists and make unique if needed
     const existing = await Product.findOne({ slug });
@@ -217,7 +224,7 @@ export const createProduct = async (req, res, next) => {
       slug,
       description,
       shortDescription: shortDescription || '',
-      images: images && images.length ? images : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'],
+      images,
       price: Number(price),
       discountPrice: discountPrice ? Number(discountPrice) : null,
       category,

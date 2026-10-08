@@ -3,8 +3,10 @@ import { Users, Search, Shield, Ban, CheckCircle } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Pagination } from '../../components/common/Pagination';
+import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 
 export const AdminUsersPage = () => {
+  const { showAlert, showConfirm } = useApplicationAlert();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -39,20 +41,28 @@ export const AdminUsersPage = () => {
       });
       await loadUsers();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating user status');
+      showAlert(err.response?.data?.message || 'Error updating user status');
     }
   };
 
   const handleToggleRole = async (user) => {
     const targetRole = user.role === 'admin' ? 'customer' : 'admin';
-    if (window.confirm(`Are you sure you want to change ${user.name}'s role to ${targetRole}?`)) {
+    const confirmed = await showConfirm(
+      `${user.name} will receive ${targetRole === 'admin' ? 'administrator access' : 'customer access'}.`,
+      {
+        title: `Change Role to ${targetRole === 'admin' ? 'Admin' : 'Customer'}?`,
+        confirmLabel: 'Change Role',
+        type: 'warning',
+      }
+    );
+    if (confirmed) {
       try {
         await api.patch(`/admin/users/${user._id}/status`, {
           role: targetRole,
         });
         await loadUsers();
       } catch (err) {
-        alert(err.response?.data?.message || 'Error updating user role');
+        showAlert(err.response?.data?.message || 'Error updating user role');
       }
     }
   };

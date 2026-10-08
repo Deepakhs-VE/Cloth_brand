@@ -16,7 +16,7 @@ export const AboutPreviewSection = () => {
       { label: 'Client Satisfaction', value: '99.5%' },
       { label: 'Countries Shipped', value: '68' },
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: '/image-placeholder.svg',
   };
 
   return (
@@ -24,12 +24,12 @@ export const AboutPreviewSection = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Image side */}
-          <div className="relative">
+          <div className="about-image group relative">
             <div className="aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl bg-slate-100">
               <img
-                src={about.imageUrl}
+                src={about.imageUrl || '/image-placeholder.svg'}
                 alt="Brand Philosophy"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.025]"
                 loading="lazy"
               />
             </div>

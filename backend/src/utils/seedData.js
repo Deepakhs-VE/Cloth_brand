@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { User } from '../models/User.js';
 import { Category } from '../models/Category.js';
 import { Product } from '../models/Product.js';
@@ -8,7 +10,9 @@ import { Testimonial } from '../models/Testimonial.js';
 import { SiteSettings } from '../models/SiteSettings.js';
 import { Review } from '../models/Review.js';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const seedDatabase = async () => {
   try {
@@ -32,7 +36,7 @@ const seedDatabase = async () => {
       email: 'admin@aurastore.com',
       password: 'Admin@123456',
       role: 'admin',
-      phone: '+1 (800) 555-0199',
+      phone: '+91 6366592991',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
     });
 
@@ -41,7 +45,7 @@ const seedDatabase = async () => {
       email: 'customer@aurastore.com',
       password: 'Customer@123456',
       role: 'customer',
-      phone: '+1 (800) 555-0188',
+      phone: '+91 6366592991',
       avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
     });
 
@@ -590,7 +594,7 @@ const seedDatabase = async () => {
       ],
       contactInfo: {
         email: 'atelier@auraclothing.com',
-        phone: '+1 (800) 892-2872',
+        phone: '+18008922872',
         whatsappNumber: '+18008922872',
         address: '450 Lexington Avenue, Haute Couture Floor 18, New York, NY 10017',
         workingHours: 'Mon - Sat: 9:00 AM - 8:00 PM EST',

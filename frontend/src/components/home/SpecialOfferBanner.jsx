@@ -35,7 +35,7 @@ export const SpecialOfferBanner = () => {
       <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 bg-slate-700/20 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 lg:p-16 flex flex-col lg:flex-row items-center justify-between gap-8 shadow-2xl">
+        <div className="bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 lg:p-16 flex flex-col lg:flex-row items-center justify-between gap-8 shadow-2xl transition-colors duration-500 hover:border-slate-700">
           {/* Left Text */}
           <div className="space-y-4 max-w-xl text-center lg:text-left">
             <span className="inline-block px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-[11px] font-bold uppercase tracking-wider">
@@ -72,7 +72,7 @@ export const SpecialOfferBanner = () => {
 
             <Link
               to={offer.buttonLink || '/products'}
-              className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-lg flex items-center space-x-2"
+              className="pressable px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-lg flex items-center space-x-2"
             >
               <span>{offer.buttonText || 'Shop Now'}</span>
               <ArrowRight className="w-4 h-4" />

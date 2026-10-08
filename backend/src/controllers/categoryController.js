@@ -48,8 +48,8 @@ export const createCategory = async (req, res, next) => {
   try {
     const { name, description, image, displayOrder, isActive } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ success: false, message: 'Category name is required' });
+    if (!name || !image) {
+      return res.status(400).json({ success: false, message: 'Category name and banner image are required' });
     }
 
     const slug = slugify(name, { lower: true, strict: true });
@@ -62,7 +62,7 @@ export const createCategory = async (req, res, next) => {
       name,
       slug,
       description: description || '',
-      image: image || '',
+      image,
       displayOrder: displayOrder || 0,
       isActive: isActive !== undefined ? isActive : true,
     });

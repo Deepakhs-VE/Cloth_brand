@@ -66,7 +66,7 @@ export const CartDrawer = () => {
                   className="flex space-x-4 pb-4 border-b border-slate-100 last:border-0"
                 >
                   <img
-                    src={item.product?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=200&q=80'}
+                    src={item.product?.image || '/image-placeholder.svg'}
                     alt={item.product?.name}
                     className="w-20 h-20 object-cover rounded-lg border border-slate-100 bg-slate-50 flex-shrink-0"
                   />

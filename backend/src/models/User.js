@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { isValidInternationalPhone } from '../utils/phone.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -36,6 +37,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+      validate: {
+        validator: isValidInternationalPhone,
+        message: 'Phone number must be a valid international number',
+      },
     },
     avatar: {
       type: String,

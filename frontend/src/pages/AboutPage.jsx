@@ -38,7 +38,7 @@ export const AboutPage = () => {
 
           <div className="aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl bg-slate-100">
             <img
-              src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80"
+              src={settings?.aboutUs?.imageUrl || '/image-placeholder.svg'}
               alt="Atelier Tailoring & Garment Craftsmanship"
               className="w-full h-full object-cover"
             />

@@ -1,29 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck,
   CreditCard,
   MapPin,
   Tag,
-  CheckCircle,
-  Truck,
   Plus,
   AlertCircle,
-  Lock,
 } from 'lucide-react';
 import api from '../services/api';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/common/Modal';
+import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
+import { useApplicationAlert } from '../context/ApplicationAlertContext';
 
 export const CheckoutPage = () => {
-  const navigate = useNavigate();
+  const { showAlert } = useApplicationAlert();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { cart, fetchCart } = useCart();
   const { user } = useAuth();
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('card_online');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
@@ -41,14 +40,6 @@ export const CheckoutPage = () => {
     postalCode: '',
     country: 'United States',
     isDefault: true,
-  });
-
-  // Card details state
-  const [cardDetails, setCardDetails] = useState({
-    cardNumber: '4242 •••• •••• 4242',
-    cardExpiry: '12/28',
-    cardCvc: '888',
-    cardName: user?.name || 'Alexander Sterling',
   });
 
   const [placingOrder, setPlacingOrder] = useState(false);
@@ -76,9 +67,35 @@ export const CheckoutPage = () => {
     loadAddresses();
   }, []);
 
+  useEffect(() => {
+    const cancelledOrderId = searchParams.get('orderId');
+    if (searchParams.get('payment') !== 'cancelled' || !cancelledOrderId) return;
+
+    const cancelPendingOrder = async () => {
+      try {
+        await api.post('/payments/cancel-checkout', { orderId: cancelledOrderId });
+        await fetchCart();
+        setOrderError('Payment was cancelled. Your cart is unchanged, so you can try again.');
+      } catch (error) {
+        setOrderError(error.response?.data?.message || 'Payment was cancelled.');
+      } finally {
+        setSearchParams({}, { replace: true });
+      }
+    };
+
+    cancelPendingOrder();
+  }, [searchParams, setSearchParams, fetchCart]);
+
   // Save new address
   const handleSaveAddress = async (e) => {
     e.preventDefault();
+    if (!isPhoneValid(newAddress.phone, true)) {
+      showAlert('Enter a valid contact phone number including the country code.', {
+        type: 'warning',
+        title: 'Invalid Phone Number',
+      });
+      return;
+    }
     try {
       const res = await api.post('/users/addresses', newAddress);
       if (res.data.success) {
@@ -87,7 +104,7 @@ export const CheckoutPage = () => {
         setAddAddressModalOpen(false);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving address');
+      showAlert(err.response?.data?.message || 'Error saving address');
     }
   };
 
@@ -144,9 +161,9 @@ export const CheckoutPage = () => {
 
     setPlacingOrder(true);
     setOrderError('');
+    let createdOrderId = null;
 
     try {
-      // 1. Create order
       const orderRes = await api.post('/orders', {
         shippingAddress: {
           fullName: addressObj.fullName,
@@ -158,29 +175,28 @@ export const CheckoutPage = () => {
           postalCode: addressObj.postalCode,
           country: addressObj.country,
         },
-        paymentMethod,
+        paymentMethod: 'stripe',
         couponCode: appliedCoupon ? appliedCoupon.code : null,
       });
 
       if (orderRes.data.success) {
         const order = orderRes.data.order;
+        createdOrderId = order._id;
 
-        // 2. If online payment, verify with payment processing API
-        if (paymentMethod !== 'cod') {
-          await api.post('/payments/process', {
-            orderId: order._id,
-            paymentMethod,
-            paymentDetails: cardDetails,
-          });
+        const paymentRes = await api.post('/payments/checkout-session', {
+          orderId: order._id,
+        });
+
+        if (!paymentRes.data.checkoutUrl) {
+          throw new Error('Stripe Checkout could not be started');
         }
 
-        // 3. Refresh user cart
-        await fetchCart();
-
-        // 4. Redirect to confirmation page
-        navigate(`/order-success/${order._id}`, { state: { order } });
+        window.location.assign(paymentRes.data.checkoutUrl);
       }
     } catch (err) {
+      if (createdOrderId) {
+        await api.post('/payments/cancel-checkout', { orderId: createdOrderId }).catch(() => {});
+      }
       setOrderError(err.response?.data?.message || 'Error completing checkout');
     } finally {
       setPlacingOrder(false);
@@ -275,110 +291,32 @@ export const CheckoutPage = () => {
               )}
             </div>
 
-            {/* Step 2: Payment Gateway Selection */}
+            {/* Step 2: Secure Stripe Payment */}
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
               <div className="flex items-center space-x-2">
                 <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold">
                   2
                 </div>
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
-                  Payment Method
+                  Secure Payment
                 </h2>
               </div>
 
-              {/* Payment Methods Options */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card_online')}
-                  className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
-                    paymentMethod === 'card_online'
-                      ? 'border-slate-900 bg-slate-50/70 shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <CreditCard className="w-5 h-5 text-slate-900 mb-2" />
-                  <p className="text-xs font-bold text-slate-900">Credit / Debit Card</p>
-                  <p className="text-[10px] text-slate-400">Instant 256-Bit SSL</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('stripe')}
-                  className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
-                    paymentMethod === 'stripe'
-                      ? 'border-slate-900 bg-slate-50/70 shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <ShieldCheck className="w-5 h-5 text-indigo-600 mb-2" />
-                  <p className="text-xs font-bold text-slate-900">Stripe Gateway</p>
-                  <p className="text-[10px] text-slate-400">Server Verified</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cod')}
-                  className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
-                    paymentMethod === 'cod'
-                      ? 'border-slate-900 bg-slate-50/70 shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <Truck className="w-5 h-5 text-emerald-600 mb-2" />
-                  <p className="text-xs font-bold text-slate-900">Courier COD</p>
-                  <p className="text-[10px] text-slate-400">Pay on Delivery</p>
-                </button>
-              </div>
-
-              {/* Card Inputs Form Preview */}
-              {paymentMethod !== 'cod' && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between text-xs text-slate-600">
-                    <span className="font-semibold">Secure Payment Verification</span>
-                    <span className="flex items-center text-emerald-600 text-[11px] font-bold">
-                      <Lock className="w-3.5 h-3.5 mr-1" /> Encrypted
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                      Card Number
-                    </label>
-                    <input
-                      type="text"
-                      value={cardDetails.cardNumber}
-                      onChange={(e) => setCardDetails({ ...cardDetails, cardNumber: e.target.value })}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                        Expiry Date
-                      </label>
-                      <input
-                        type="text"
-                        value={cardDetails.cardExpiry}
-                        onChange={(e) => setCardDetails({ ...cardDetails, cardExpiry: e.target.value })}
-                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                        Security CVC
-                      </label>
-                      <input
-                        type="password"
-                        value={cardDetails.cardCvc}
-                        onChange={(e) => setCardDetails({ ...cardDetails, cardCvc: e.target.value })}
-                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono"
-                      />
-                    </div>
+              <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-4">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Pay securely with Stripe</p>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    You will be redirected to Stripe's encrypted checkout to enter your card or supported wallet details. AURA never stores your payment credentials.
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Stripe verified secure checkout</span>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
@@ -484,7 +422,7 @@ export const CheckoutPage = () => {
                 disabled={placingOrder}
                 className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-xl flex items-center justify-center space-x-2 disabled:opacity-50"
               >
-                <span>{placingOrder ? 'Processing Order...' : 'Authorize & Place Order'}</span>
+                <span>{placingOrder ? 'Opening Stripe...' : 'Continue to Secure Payment'}</span>
               </button>
 
               <p className="text-[10px] text-slate-400 text-center leading-tight">
@@ -519,12 +457,10 @@ export const CheckoutPage = () => {
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
                 Phone Number *
               </label>
-              <input
-                type="text"
+              <InternationalPhoneInput
                 required
                 value={newAddress.phone}
-                onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                onChange={(phone) => setNewAddress({ ...newAddress, phone })}
               />
             </div>
           </div>

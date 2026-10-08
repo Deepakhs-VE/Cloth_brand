@@ -1,27 +1,27 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import authStorage from '../utils/authStorage';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('aura_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState(() => authStorage.getUser());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('aura_access_token');
+      const token = authStorage.getAccessToken();
       if (token) {
         try {
           const res = await api.get('/auth/me');
           if (res.data.success) {
             setUser(res.data.user);
-            localStorage.setItem('aura_user', JSON.stringify(res.data.user));
+            authStorage.setUser(res.data.user);
           }
         } catch (error) {
           console.error('Session validation error:', error.message);
+          authStorage.clearSession();
+          setUser(null);
         }
       }
       setLoading(false);
@@ -33,20 +33,16 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     if (res.data.success) {
-      localStorage.setItem('aura_access_token', res.data.accessToken);
-      localStorage.setItem('aura_refresh_token', res.data.refreshToken);
-      localStorage.setItem('aura_user', JSON.stringify(res.data.user));
+      authStorage.setSession(res.data);
       setUser(res.data.user);
       return res.data;
     }
   };
 
-  const register = async (name, email, password, phone) => {
-    const res = await api.post('/auth/register', { name, email, password, phone });
+  const register = async (name, email, password, confirmPassword, phone) => {
+    const res = await api.post('/auth/register', { name, email, password, confirmPassword, phone });
     if (res.data.success) {
-      localStorage.setItem('aura_access_token', res.data.accessToken);
-      localStorage.setItem('aura_refresh_token', res.data.refreshToken);
-      localStorage.setItem('aura_user', JSON.stringify(res.data.user));
+      authStorage.setSession(res.data);
       setUser(res.data.user);
       return res.data;
     }
@@ -58,9 +54,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       // Ignore network errors on logout
     } finally {
-      localStorage.removeItem('aura_access_token');
-      localStorage.removeItem('aura_refresh_token');
-      localStorage.removeItem('aura_user');
+      authStorage.clearSession();
       setUser(null);
     }
   };
@@ -68,7 +62,7 @@ export const AuthProvider = ({ children }) => {
   const updateUserProfile = (updatedFields) => {
     const newUser = { ...user, ...updatedFields };
     setUser(newUser);
-    localStorage.setItem('aura_user', JSON.stringify(newUser));
+    authStorage.setUser(newUser);
   };
 
   const value = {

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title desc">
+  <title id="title">Image not available</title>
+  <desc id="desc">Neutral placeholder for content without an uploaded image</desc>
+  <rect width="800" height="600" fill="#f1f5f9"/>
+  <path d="M250 405l95-105 67 70 47-48 91 83H250z" fill="#cbd5e1"/>
+  <circle cx="493" cy="230" r="38" fill="#cbd5e1"/>
+  <rect x="205" y="150" width="390" height="300" rx="24" fill="none" stroke="#94a3b8" stroke-width="12"/>
+  <text x="400" y="510" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#64748b">Upload an image</text>
+</svg>

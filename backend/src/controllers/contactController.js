@@ -1,4 +1,5 @@
 import { ContactMessage } from '../models/ContactMessage.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 export const submitContactMessage = async (req, res, next) => {
   try {
@@ -14,7 +15,7 @@ export const submitContactMessage = async (req, res, next) => {
     const contactMessage = await ContactMessage.create({
       name,
       email,
-      phone: phone || '',
+      phone: normalizePhoneNumber(phone),
       subject,
       message,
       status: 'NEW',

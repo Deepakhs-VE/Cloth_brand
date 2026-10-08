@@ -86,6 +86,13 @@ export const Navbar = () => {
           {/* Brand Logo */}
           <div className="flex-shrink-0 flex items-center">
             <Link to="/" className="flex items-center space-x-2 group">
+              {settings?.logoUrl && (
+                <img
+                  src={settings.logoUrl}
+                  alt={`${brandName} logo`}
+                  className="h-10 w-auto max-w-[120px] object-contain"
+                />
+              )}
               <span className="font-luxury text-2xl sm:text-3xl font-extrabold tracking-widest text-slate-900 uppercase">
                 {brandName}
               </span>

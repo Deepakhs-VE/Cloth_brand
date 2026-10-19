@@ -5,12 +5,45 @@
 @layer base {
   body {
     @apply bg-[#fcfbfa] text-slate-800 antialiased font-sans;
+    min-width: 320px;
   }
 
-  h1, h2, h3, h4, .font-luxury {
+  .font-luxury {
     font-family: 'Cinzel', serif;
     letter-spacing: -0.01em;
   }
+
+  button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid #b88628;
+    outline-offset: 3px;
+  }
+
+  img {
+    color: transparent;
+  }
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 120;
+  transform: translateY(-160%);
+  border-radius: 0.75rem;
+  background: #0f172a;
+  color: white;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: transform 180ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 /* Custom scrollbar */
@@ -165,5 +198,47 @@
 
 .international-phone-input--invalid {
   @apply border-rose-300 bg-rose-50/40;
+}
+
+/* Two accessible range inputs share this one visual price-filter track. */
+.price-range-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.price-range-thumb::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #0f172a;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.2);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.price-range-thumb:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+.price-range-thumb::-moz-range-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid #0f172a;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.2);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.price-range-thumb:focus-visible::-webkit-slider-thumb,
+.price-range-thumb:focus-visible::-moz-range-thumb {
+  outline: 2px solid #b88628;
+  outline-offset: 2px;
 }
 

@@ -1,53 +1,75 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Tag, Copy, Check, Clock, Sparkles } from 'lucide-react';
 import api from '../services/api';
 import { ProductCard } from '../components/common/ProductCard';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const OffersPage = () => {
+  const { formatMoney } = useCurrency();
   const [coupons, setCoupons] = useState([]);
   const [discountedProducts, setDiscountedProducts] = useState([]);
   const [copiedCode, setCopiedCode] = useState(null);
   const [loading, setLoading] = useState(true);
   const [couponError, setCouponError] = useState('');
 
-  useEffect(() => {
-    const fetchOffers = async () => {
-      setLoading(true);
-      setCouponError('');
+  const fetchOffers = useCallback(async () => {
+    setLoading(true);
+    setCouponError('');
 
-      const [couponResult, productResult] = await Promise.allSettled([
-        api.get('/coupons/public'),
-        api.get('/products?limit=8'),
-      ]);
+    const [couponResult, productResult] = await Promise.allSettled([
+      api.get('/coupons/public', { params: { fresh: Date.now() } }),
+      api.get('/products?limit=8'),
+    ]);
 
-      if (couponResult.status === 'fulfilled' && couponResult.value.data.success) {
-        setCoupons(couponResult.value.data.coupons || []);
-      } else {
-        console.error(
-          'Error fetching coupons:',
-          couponResult.status === 'rejected' ? couponResult.reason : couponResult.value.data
+    if (couponResult.status === 'fulfilled' && couponResult.value.data.success) {
+      setCoupons(couponResult.value.data.coupons || []);
+    } else {
+      console.error(
+        'Error fetching coupons:',
+        couponResult.status === 'rejected' ? couponResult.reason : couponResult.value.data
+      );
+      setCouponError('Offers are temporarily unavailable. Please try again shortly.');
+    }
+
+    if (productResult.status === 'fulfilled') {
+      const res = productResult.value;
+      if (res.data.success) {
+        const discounted = res.data.products.filter(
+          (p) => p.discountPrice !== null && p.discountPrice < p.price
         );
-        setCouponError('Offers are temporarily unavailable. Please try again shortly.');
+        setDiscountedProducts(discounted.length > 0 ? discounted : res.data.products);
       }
+    } else {
+      console.error('Error fetching discounted products:', productResult.reason);
+    }
 
-      if (productResult.status === 'fulfilled') {
-        const res = productResult.value;
-        if (res.data.success) {
-          // Filter products with discountPrice
-          const discounted = res.data.products.filter(
-            (p) => p.discountPrice !== null && p.discountPrice < p.price
-          );
-          setDiscountedProducts(discounted.length > 0 ? discounted : res.data.products);
-        }
-      } else {
-        console.error('Error fetching discounted products:', productResult.reason);
-      }
+    setLoading(false);
+  }, []);
 
-      setLoading(false);
+  useEffect(() => {
+    fetchOffers();
+
+    const handleFocus = () => fetchOffers();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchOffers();
+    };
+    const handleCouponUpdate = () => fetchOffers();
+    const handleStorage = (event) => {
+      if (event.key === 'aura_coupons_updated_at') fetchOffers();
     };
 
-    fetchOffers();
-  }, []);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('aura:coupons-updated', handleCouponUpdate);
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('aura:coupons-updated', handleCouponUpdate);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchOffers]);
 
   const handleCopy = (code) => {
     navigator.clipboard.writeText(code);
@@ -102,7 +124,7 @@ export const OffersPage = () => {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-2xl font-black text-slate-900">
-                    {c.discountType === 'percentage' ? `${c.discountValue}% OFF` : `$${c.discountValue} OFF`}
+                    {c.discountType === 'percentage' ? `${c.discountValue}% OFF` : `${formatMoney(c.discountValue)} OFF`}
                   </span>
                   <Tag className="w-5 h-5 text-amber-600" />
                 </div>
@@ -112,9 +134,9 @@ export const OffersPage = () => {
                 </p>
 
                 <div className="text-[11px] text-slate-400 space-y-1 mb-6">
-                  <p>• Minimum spend: ${Number(c.minOrderAmount || 0).toFixed(2)}</p>
+                  <p>• Minimum spend: {formatMoney(c.minOrderAmount || 0)}</p>
                   {c.maxDiscountAmount && c.discountType === 'percentage' && (
-                    <p>• Maximum savings: ${Number(c.maxDiscountAmount).toFixed(2)}</p>
+                    <p>• Maximum savings: {formatMoney(c.maxDiscountAmount)}</p>
                   )}
                   <p className="flex items-center gap-1.5">
                     <Clock className="h-3 w-3" />

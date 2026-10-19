@@ -7,16 +7,19 @@ import { ProductCard } from '../common/ProductCard';
 export const FeaturedProductsSection = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
+        setError('');
         const res = await api.get('/products/featured');
         if (res.data.success) {
           setProducts(res.data.products);
         }
       } catch (err) {
         console.error('Error fetching featured products:', err);
+        setError('Featured pieces are temporarily unavailable.');
       } finally {
         setLoading(false);
       }
@@ -48,11 +51,19 @@ export const FeaturedProductsSection = () => {
               <div key={i} className="aspect-[4/5] bg-slate-100 rounded-2xl animate-pulse" />
             ))}
           </div>
-        ) : (
+        ) : error ? (
+          <div role="status" className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600">
+            {error}
+          </div>
+        ) : products.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {products.map((product) => (
               <ProductCard key={product._id} product={product} />
             ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600">
+            New featured pieces are being prepared.
           </div>
         )}
 

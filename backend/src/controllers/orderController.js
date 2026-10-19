@@ -2,8 +2,12 @@ import { Order } from '../models/Order.js';
 import { Product } from '../models/Product.js';
 import { Cart } from '../models/Cart.js';
 import { Coupon } from '../models/Coupon.js';
+import { SiteSettings } from '../models/SiteSettings.js';
 import { emailService } from '../utils/emailService.js';
 import { normalizePhoneNumber } from '../utils/phone.js';
+import { normalizeEuropeanCountry } from '../utils/countries.js';
+import { convertFromBase } from '../utils/exchangeRateService.js';
+import PDFDocument from 'pdfkit';
 
 // Helper to generate unique order number (e.g. AUR-202610-8291)
 const generateOrderNumber = () => {
@@ -12,9 +16,57 @@ const generateOrderNumber = () => {
   return `AUR-${dateStr}-${randomSuffix}`;
 };
 
+const getSelectedVariant = (product, size = '', color = '') =>
+  product.variants?.find(
+    (variant) => variant.isActive && variant.size === size && variant.color === color
+  ) || null;
+
+const restoreOrderItemStock = async (item) => {
+  const product = await Product.findById(item.product);
+  if (!product) return;
+  if (product.variants?.length) {
+    const variant = product.variants.find((entry) =>
+      item.variantSku
+        ? entry.sku === item.variantSku
+        : entry.size === (item.selectedSize || '') && entry.color === (item.selectedColor || '')
+    );
+    if (variant) variant.stock += item.quantity;
+  }
+  product.stock += item.quantity;
+  await product.save();
+};
+
+const releaseReservedStock = async (items) => {
+  await Promise.all(items.map((item) => {
+    if (item.variantSku) {
+      return Product.updateOne(
+        { _id: item.productId },
+        {
+          $inc: {
+            stock: item.quantity,
+            'variants.$[variant].stock': item.quantity,
+          },
+        },
+        { arrayFilters: [{ 'variant.sku': item.variantSku }] }
+      );
+    }
+    return Product.updateOne({ _id: item.productId }, { $inc: { stock: item.quantity } });
+  }));
+};
+
 export const createOrder = async (req, res, next) => {
+  const reservedStock = [];
+  let appliedCoupon = null;
+  let couponUsageCommitted = false;
   try {
     const { shippingAddress, paymentMethod = 'stripe', couponCode } = req.body;
+    let settings = await SiteSettings.findOne();
+    if (!settings) settings = await SiteSettings.create({});
+    const commerceSettings = settings?.commerce || {};
+    const currency = String(commerceSettings.currencyCode || 'EUR').toUpperCase();
+    const locale = commerceSettings.locale || 'en-IE';
+    let vatRate = Number(commerceSettings.defaultVatRate ?? 20);
+    const pricesIncludeVat = commerceSettings.pricesIncludeVat !== false;
 
     if (paymentMethod !== 'stripe') {
       return res.status(400).json({
@@ -25,6 +77,24 @@ export const createOrder = async (req, res, next) => {
 
     if (!shippingAddress || !shippingAddress.streetAddress || !shippingAddress.city) {
       return res.status(400).json({ success: false, message: 'Complete shipping address is required' });
+    }
+
+    Object.assign(
+      shippingAddress,
+      normalizeEuropeanCountry(shippingAddress.countryCode, shippingAddress.country)
+    );
+    const destinationVat = (commerceSettings.countryVatRates || []).find(
+      (entry) => String(entry.countryCode).toUpperCase() === shippingAddress.countryCode
+    );
+    if (destinationVat) vatRate = Number(destinationVat.rate);
+    const supportedCountries = (commerceSettings.supportedCountries || []).map((entry) => String(entry).trim().toUpperCase());
+    const blockedPostalPrefixes = (commerceSettings.blockedPostalPrefixes || []).map((entry) => String(entry).trim().toUpperCase());
+    const normalizedPostalCode = String(shippingAddress.postalCode || '').trim().toUpperCase();
+    if (supportedCountries.length && !supportedCountries.includes(shippingAddress.countryCode)) {
+      return res.status(400).json({ success: false, message: 'Delivery is not available for the selected country' });
+    }
+    if (blockedPostalPrefixes.some((prefix) => prefix && normalizedPostalCode.startsWith(prefix))) {
+      return res.status(400).json({ success: false, message: 'Delivery is not available for this postal code' });
     }
 
     shippingAddress.phone = normalizePhoneNumber(shippingAddress.phone, {
@@ -53,17 +123,49 @@ export const createOrder = async (req, res, next) => {
         });
       }
 
-      if (product.stock < item.quantity) {
+      const selectedVariant = getSelectedVariant(
+        product,
+        item.selectedSize || '',
+        item.selectedColor || ''
+      );
+      const usesVariants = product.variants?.length > 0;
+      const availableStock = usesVariants ? selectedVariant?.stock || 0 : product.stock;
+
+      if (usesVariants && !selectedVariant) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient stock for "${product.name}". Only ${product.stock} units remaining.`,
+          message: `The selected size and colour combination for "${product.name}" is unavailable`,
         });
       }
 
-      const currentPrice =
-        product.discountPrice !== null && product.discountPrice !== undefined
-          ? product.discountPrice
-          : product.price;
+      if (availableStock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for "${product.name}" in the selected size and colour. Only ${availableStock} unit(s) remain.`,
+        });
+      }
+
+      if (product.sizes?.length > 0 && !product.sizes.includes(item.selectedSize || '')) {
+        return res.status(400).json({
+          success: false,
+          message: `Please select an available size for "${product.name}"`,
+        });
+      }
+
+      if (product.colors?.length > 0 && !product.colors.includes(item.selectedColor || '')) {
+        return res.status(400).json({
+          success: false,
+          message: `Please select an available colour for "${product.name}"`,
+        });
+      }
+
+      const variantRegularPrice = selectedVariant?.basePrice ?? selectedVariant?.price ?? product.basePrice ?? product.price;
+      const currentBasePrice = selectedVariant?.baseDiscountPrice !== null && selectedVariant?.baseDiscountPrice !== undefined
+        ? selectedVariant.baseDiscountPrice
+        : selectedVariant?.basePrice !== null && selectedVariant?.basePrice !== undefined
+        ? variantRegularPrice
+        : product.baseDiscountPrice ?? product.discountPrice ?? variantRegularPrice;
+      const currentPrice = await convertFromBase(currentBasePrice, settings);
 
       const itemTotal = currentPrice * item.quantity;
       subtotal += itemTotal;
@@ -72,21 +174,33 @@ export const createOrder = async (req, res, next) => {
         product: product._id,
         name: product.name,
         slug: product.slug,
-        image: product.images[0] || '',
+        image: selectedVariant?.images?.[0] || product.images[0] || '',
         price: currentPrice,
         quantity: item.quantity,
-        selectedSize: item.selectedSize || 'M',
+        selectedSize: item.selectedSize || '',
         selectedColor: item.selectedColor || '',
+        variantSku: selectedVariant?.sku || '',
         total: Math.round(itemTotal * 100) / 100,
+        returnPolicy: {
+          returnable: product.returnPolicy?.returnable !== false,
+          exchangeable: product.returnPolicy?.exchangeable !== false,
+          returnWindowDays: Math.max(14, product.returnPolicy?.returnWindowDays ?? commerceSettings.defaultReturnWindowDays ?? 30),
+          exchangeWindowDays: product.returnPolicy?.exchangeWindowDays ?? commerceSettings.defaultExchangeWindowDays ?? 30,
+          finalSale: product.returnPolicy?.finalSale === true,
+          exemptionReason: product.returnPolicy?.exemptionReason || '',
+        },
       });
 
-      stockToReduce.push({ product, quantity: item.quantity });
+      stockToReduce.push({
+        productId: product._id,
+        productName: product.name,
+        variantSku: selectedVariant?.sku || '',
+        quantity: item.quantity,
+      });
     }
 
     // 3. Coupon validation & discount calculation
     let discountAmount = 0;
-    let appliedCoupon = null;
-
     if (couponCode) {
       const coupon = await Coupon.findOne({
         code: couponCode.toUpperCase().trim(),
@@ -122,16 +236,59 @@ export const createOrder = async (req, res, next) => {
     subtotal = Math.round(subtotal * 100) / 100;
     discountAmount = Math.round(discountAmount * 100) / 100;
 
-    // Complimentary shipping over $150, else $15
-    const shippingAmount = subtotal >= 150 ? 0 : 15.0;
-    // Estimated tax (e.g. 5%)
-    const taxAmount = Math.round((subtotal - discountAmount) * 0.05 * 100) / 100;
-    const totalAmount = Math.round((subtotal - discountAmount + shippingAmount + taxAmount) * 100) / 100;
+    const freeShippingThreshold = Number(commerceSettings.freeShippingThreshold ?? 150);
+    const shippingAmount = subtotal >= freeShippingThreshold
+      ? 0
+      : Number(commerceSettings.standardShippingAmount ?? 15);
+    const discountedMerchandise = Math.max(0, subtotal - discountAmount);
+    // European storefront prices are normally VAT-inclusive. Keep the VAT
+    // component for invoices without charging it a second time.
+    const taxableAmount = discountedMerchandise + shippingAmount;
+    const taxAmount = pricesIncludeVat
+      ? Math.round((taxableAmount - taxableAmount / (1 + vatRate / 100)) * 100) / 100
+      : Math.round(taxableAmount * (vatRate / 100) * 100) / 100;
+    const totalAmount = Math.round((discountedMerchandise + shippingAmount + (pricesIncludeVat ? 0 : taxAmount)) * 100) / 100;
 
-    // 4. Reduce stock
+    // 4. Atomically reserve stock. The conditional update prevents two
+    // simultaneous checkouts from purchasing the final unit.
     for (const item of stockToReduce) {
-      item.product.stock -= item.quantity;
-      await item.product.save();
+      const updatedProduct = item.variantSku
+        ? await Product.findOneAndUpdate(
+            {
+              _id: item.productId,
+              isActive: true,
+              stock: { $gte: item.quantity },
+              variants: {
+                $elemMatch: {
+                  sku: item.variantSku,
+                  isActive: true,
+                  stock: { $gte: item.quantity },
+                },
+              },
+            },
+            {
+              $inc: {
+                stock: -item.quantity,
+                'variants.$[variant].stock': -item.quantity,
+              },
+            },
+            { arrayFilters: [{ 'variant.sku': item.variantSku }], new: true }
+          )
+        : await Product.findOneAndUpdate(
+            { _id: item.productId, isActive: true, stock: { $gte: item.quantity } },
+            { $inc: { stock: -item.quantity } },
+            { new: true }
+          );
+
+      if (!updatedProduct) {
+        await releaseReservedStock(reservedStock);
+        reservedStock.length = 0;
+        return res.status(409).json({
+          success: false,
+          message: `Stock changed while checking out "${item.productName}". Please review your cart and try again.`,
+        });
+      }
+      reservedStock.push(item);
     }
 
     // 5. Update coupon usage
@@ -146,6 +303,7 @@ export const createOrder = async (req, res, next) => {
         appliedCoupon.usedBy.push({ user: req.user._id, count: 1 });
       }
       await appliedCoupon.save();
+      couponUsageCommitted = true;
     }
 
     // 6. Create Order
@@ -163,6 +321,10 @@ export const createOrder = async (req, res, next) => {
       shippingAmount,
       taxAmount,
       totalAmount,
+      currency,
+      locale,
+      vatRate,
+      pricesIncludeVat,
       orderStatus: 'PENDING',
       statusHistory: [
         {
@@ -180,6 +342,15 @@ export const createOrder = async (req, res, next) => {
       order,
     });
   } catch (error) {
+    if (reservedStock.length) await releaseReservedStock(reservedStock);
+    if (couponUsageCommitted && appliedCoupon) {
+      appliedCoupon.usageCount = Math.max(0, appliedCoupon.usageCount - 1);
+      const usage = appliedCoupon.usedBy.find(
+        (entry) => entry.user.toString() === req.user._id.toString()
+      );
+      if (usage) usage.count = Math.max(0, usage.count - 1);
+      await appliedCoupon.save().catch(() => {});
+    }
     next(error);
   }
 };
@@ -230,6 +401,205 @@ export const getOrderById = async (req, res, next) => {
   }
 };
 
+export const downloadInvoice = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('user', 'name email');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (order.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to download this invoice' });
+    }
+    if (!order.isPaid) {
+      return res.status(409).json({ success: false, message: 'Invoice is available after payment is confirmed' });
+    }
+
+    const settings = await SiteSettings.findOne().lean();
+    const currency = order.currency || settings?.commerce?.currencyCode || 'EUR';
+    const locale = order.locale || settings?.commerce?.locale || 'en-IE';
+    const money = (value) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value || 0));
+    const doc = new PDFDocument({ margin: 48, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${order.orderNumber}.pdf"`);
+    doc.pipe(res);
+
+    doc.fontSize(22).fillColor('#0f172a').text(settings?.brandName || 'AURA Atelier');
+    doc.fontSize(10).fillColor('#475569').text(settings?.legalBusiness?.legalName || settings?.brandName || 'AURA Atelier');
+    if (settings?.legalBusiness?.vatNumber) doc.text(`VAT: ${settings.legalBusiness.vatNumber}`);
+    if (settings?.legalBusiness?.companyRegistrationNumber) doc.text(`Company registration: ${settings.legalBusiness.companyRegistrationNumber}`);
+    doc.moveDown().fontSize(18).fillColor('#0f172a').text('Tax Invoice', { align: 'right' });
+    doc.fontSize(10).text(`Invoice / order: ${order.orderNumber}`, { align: 'right' });
+    doc.text(`Order date: ${new Date(order.createdAt).toLocaleDateString(locale)}`, { align: 'right' });
+    doc.moveDown(2).fontSize(11).text('Bill and ship to', { underline: true });
+    const address = order.shippingAddress;
+    doc.fontSize(10).text(address.fullName).text(address.streetAddress);
+    if (address.apartment) doc.text(address.apartment);
+    doc.text(`${address.postalCode} ${address.city}, ${address.state}`).text(address.country);
+    doc.text(address.phone);
+    doc.moveDown(1.5);
+
+    order.orderItems.forEach((item) => {
+      doc.fontSize(10).fillColor('#0f172a').text(item.name, { continued: false });
+      const variant = [item.selectedColor, item.selectedSize, item.variantSku].filter(Boolean).join(' / ');
+      if (variant) doc.fontSize(8).fillColor('#64748b').text(variant);
+      doc.fontSize(9).fillColor('#334155').text(`${item.quantity} × ${money(item.price)}   ${money(item.total)}`, { align: 'right' });
+      doc.moveDown(0.5);
+    });
+
+    doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').stroke();
+    doc.moveDown().fontSize(10).fillColor('#334155');
+    doc.text(`Subtotal: ${money(order.subtotal)}`, { align: 'right' });
+    if (order.discountAmount) doc.text(`Discount: -${money(order.discountAmount)}`, { align: 'right' });
+    doc.text(`Delivery: ${money(order.shippingAmount)}`, { align: 'right' });
+    doc.text(`VAT (${order.vatRate || 0}%)${order.pricesIncludeVat ? ' included' : ''}: ${money(order.taxAmount)}`, { align: 'right' });
+    doc.fontSize(13).fillColor('#0f172a').text(`Total: ${money(order.totalAmount)}`, { align: 'right' });
+    doc.moveDown(2).fontSize(8).fillColor('#64748b').text('Payment processed securely by Stripe. This invoice was generated electronically.');
+    doc.end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requestExchange = async (req, res, next) => {
+  try {
+    const { orderItemId, toSize = '', toColor = '', reason } = req.body;
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (order.refundRequest && !['REJECTED', 'COMPLETED'].includes(order.refundRequest.status)) {
+      return res.status(409).json({ success: false, message: 'Resolve the active return or refund request before requesting an exchange' });
+    }
+    if (order.orderStatus !== 'DELIVERED' || !order.isPaid) {
+      return res.status(400).json({ success: false, message: 'Only delivered and paid items can be exchanged' });
+    }
+    if (!reason || String(reason).trim().length < 5) {
+      return res.status(400).json({ success: false, message: 'Please provide an exchange reason' });
+    }
+
+    const item = order.orderItems.id(orderItemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Order item not found' });
+    if (item.returnPolicy?.finalSale || item.returnPolicy?.exchangeable === false) {
+      return res.status(400).json({ success: false, message: 'This item is not eligible for exchange' });
+    }
+    const exchangeWindowDays = item.returnPolicy?.exchangeWindowDays ?? 30;
+    const deliveredAt = order.deliveredAt || order.updatedAt;
+    if (Date.now() > new Date(deliveredAt).getTime() + exchangeWindowDays * 86400000) {
+      return res.status(400).json({ success: false, message: `The ${exchangeWindowDays}-day exchange window has expired` });
+    }
+    const activeRequest = order.exchangeRequests.find(
+      (request) => request.orderItemId.toString() === item._id.toString()
+        && !['REJECTED', 'COMPLETED'].includes(request.status)
+    );
+    if (activeRequest) {
+      return res.status(409).json({ success: false, message: 'An exchange is already active for this item' });
+    }
+    const activeItemReturn = order.itemReturnRequests?.find(
+      (request) => request.orderItemId.toString() === item._id.toString()
+        && !['REJECTED', 'COMPLETED'].includes(request.status)
+    );
+    if (activeItemReturn) {
+      return res.status(409).json({ success: false, message: 'Resolve the active return or cancellation request before exchanging this item' });
+    }
+
+    const product = await Product.findById(item.product);
+    const targetVariant = product?.variants?.find(
+      (variant) => variant.isActive && variant.size === String(toSize).trim() && variant.color === String(toColor).trim()
+    );
+    if (!targetVariant || targetVariant.stock < item.quantity) {
+      return res.status(400).json({ success: false, message: 'The requested replacement variant is unavailable' });
+    }
+    if (targetVariant.sku === item.variantSku) {
+      return res.status(400).json({ success: false, message: 'Please choose a different size or colour' });
+    }
+    const targetPrice = targetVariant.discountPrice !== null && targetVariant.discountPrice !== undefined
+      ? targetVariant.discountPrice
+      : targetVariant.price !== null && targetVariant.price !== undefined
+      ? targetVariant.price
+      : product.discountPrice ?? product.price;
+    if (Math.abs(Number(targetPrice) - Number(item.price)) > 0.009) {
+      return res.status(400).json({
+        success: false,
+        message: 'Direct exchanges require the replacement variant to have the same price. Please request a return for differently priced variants.',
+      });
+    }
+
+    order.exchangeRequests.push({
+      orderItemId: item._id,
+      product: item.product,
+      productName: item.name,
+      quantity: item.quantity,
+      fromSize: item.selectedSize,
+      fromColor: item.selectedColor,
+      fromVariantSku: item.variantSku,
+      toSize: targetVariant.size,
+      toColor: targetVariant.color,
+      toVariantSku: targetVariant.sku,
+      reason: String(reason).trim(),
+    });
+    await order.save();
+    res.status(201).json({ success: true, message: 'Exchange request submitted', order });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateExchangeRequestAdmin = async (req, res, next) => {
+  try {
+    const { status, adminNote = '' } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    const request = order.exchangeRequests.id(req.params.exchangeId);
+    if (!request) return res.status(404).json({ success: false, message: 'Exchange request not found' });
+
+    const allowed = {
+      REQUESTED: ['APPROVED', 'REJECTED'],
+      APPROVED: ['RECEIVED'],
+      RECEIVED: ['SHIPPED'],
+      SHIPPED: ['COMPLETED'],
+    };
+    if (!allowed[request.status]?.includes(status)) {
+      return res.status(409).json({ success: false, message: `Exchange cannot move from ${request.status} to ${status}` });
+    }
+
+    if (status === 'APPROVED') {
+      const reserved = await Product.findOneAndUpdate(
+        {
+          _id: request.product,
+          stock: { $gte: request.quantity },
+          variants: { $elemMatch: { sku: request.toVariantSku, isActive: true, stock: { $gte: request.quantity } } },
+        },
+        {
+          $inc: {
+            stock: -request.quantity,
+            'variants.$[variant].stock': -request.quantity,
+          },
+        },
+        { arrayFilters: [{ 'variant.sku': request.toVariantSku }], new: true }
+      );
+      if (!reserved) {
+        return res.status(409).json({ success: false, message: 'The requested replacement is no longer in stock' });
+      }
+      request.reviewedAt = new Date();
+    }
+
+    if (status === 'RECEIVED') {
+      await restoreOrderItemStock({
+        product: request.product,
+        variantSku: request.fromVariantSku,
+        selectedSize: request.fromSize,
+        selectedColor: request.fromColor,
+        quantity: request.quantity,
+      });
+      request.receivedAt = new Date();
+    }
+    if (status === 'SHIPPED') request.shippedAt = new Date();
+    if (status === 'COMPLETED') request.completedAt = new Date();
+    request.status = status;
+    request.adminNote = String(adminNote).trim();
+    await order.save();
+    res.status(200).json({ success: true, message: `Exchange updated to ${status}`, order });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const cancelOrder = async (req, res, next) => {
   try {
     const { reason } = req.body;
@@ -237,6 +607,19 @@ export const cancelOrder = async (req, res, next) => {
 
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (order.exchangeRequests?.some((request) => !['REJECTED', 'COMPLETED'].includes(request.status))) {
+      return res.status(409).json({
+        success: false,
+        message: 'Resolve the active exchange request before requesting a return or refund',
+      });
+    }
+    if (order.itemReturnRequests?.some((request) => !['REJECTED', 'COMPLETED'].includes(request.status))) {
+      return res.status(409).json({
+        success: false,
+        message: 'Resolve active item-level requests before cancelling the complete order',
+      });
     }
 
     if (order.orderStatus === 'CANCELLED') {
@@ -275,9 +658,7 @@ export const cancelOrder = async (req, res, next) => {
 
     // Restore inventory stock
     for (const item of order.orderItems) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: { stock: item.quantity },
-      });
+      await restoreOrderItemStock(item);
     }
 
     if (order.couponCode) {
@@ -311,6 +692,20 @@ export const requestRefund = async (req, res, next) => {
 
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (order.itemReturnRequests?.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'This order is already using item-level processing. Submit separate requests for the remaining eligible items.',
+      });
+    }
+
+    if (order.exchangeRequests?.some((request) => !['REJECTED', 'COMPLETED'].includes(request.status))) {
+      return res.status(409).json({
+        success: false,
+        message: 'Resolve the active exchange request before requesting a return or refund',
+      });
     }
 
     if (reason.length < 10) {
@@ -354,12 +749,23 @@ export const requestRefund = async (req, res, next) => {
     if (preShipmentStatuses.includes(order.orderStatus)) {
       requestType = 'CANCELLATION';
     } else if (order.orderStatus === 'DELIVERED') {
+      const ineligibleItem = order.orderItems.find(
+        (item) => item.returnPolicy?.finalSale || item.returnPolicy?.returnable === false
+          || item.cancelledQuantity > 0 || item.returnedQuantity > 0
+      );
+      if (ineligibleItem) {
+        return res.status(400).json({
+          success: false,
+          message: 'This order contains an item that is not eligible for a full-order return. Use the item-level return option for eligible items.',
+        });
+      }
       const deliveredAt = order.deliveredAt || order.updatedAt;
-      const returnWindowEndsAt = new Date(deliveredAt).getTime() + 30 * 24 * 60 * 60 * 1000;
+      const returnWindowDays = Math.min(...order.orderItems.map((item) => item.returnPolicy?.returnWindowDays ?? 30));
+      const returnWindowEndsAt = new Date(deliveredAt).getTime() + returnWindowDays * 24 * 60 * 60 * 1000;
       if (Date.now() > returnWindowEndsAt) {
         return res.status(400).json({
           success: false,
-          message: 'The 30-day return window for this order has expired',
+          message: `The ${returnWindowDays}-day return window for this order has expired`,
         });
       }
       requestType = 'RETURN';
@@ -456,6 +862,123 @@ export const reviewRefundRequestAdmin = async (req, res, next) => {
       message: `Refund request ${order.refundRequest.status.toLowerCase().replace(/_/g, ' ')}`,
       order,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requestItemReturn = async (req, res, next) => {
+  try {
+    const { orderItemId, quantity = 1, reason } = req.body;
+    const requestedQuantity = Math.max(1, Number(quantity) || 1);
+    const cleanReason = String(reason || '').trim();
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (!order.isPaid || order.paymentStatus !== 'PAID') {
+      return res.status(400).json({ success: false, message: 'Only paid items can be cancelled or returned through this request' });
+    }
+    if (cleanReason.length < 10) {
+      return res.status(400).json({ success: false, message: 'Please provide a clear reason of at least 10 characters' });
+    }
+
+    const item = order.orderItems.id(orderItemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Order item not found' });
+    const activeExchange = order.exchangeRequests?.find(
+      (request) => request.orderItemId.toString() === item._id.toString()
+        && !['REJECTED', 'COMPLETED'].includes(request.status)
+    );
+    if (activeExchange) {
+      return res.status(409).json({ success: false, message: 'Resolve the active exchange before returning or cancelling this item' });
+    }
+    const pendingQuantity = order.itemReturnRequests
+      .filter((request) => request.orderItemId.toString() === item._id.toString() && !['REJECTED', 'COMPLETED'].includes(request.status))
+      .reduce((sum, request) => sum + request.quantity, 0);
+    const availableQuantity = item.quantity - item.cancelledQuantity - item.returnedQuantity - pendingQuantity;
+    if (requestedQuantity > availableQuantity) {
+      return res.status(400).json({ success: false, message: `Only ${availableQuantity} item(s) are eligible for this request` });
+    }
+
+    const preShipment = ['PENDING', 'CONFIRMED', 'PROCESSING'].includes(order.orderStatus);
+    const delivered = order.orderStatus === 'DELIVERED';
+    if (!preShipment && !delivered) {
+      return res.status(400).json({ success: false, message: 'Items in transit cannot be cancelled. Request a return after delivery.' });
+    }
+    if (delivered) {
+      if (item.returnPolicy?.finalSale || item.returnPolicy?.returnable === false) {
+        return res.status(400).json({ success: false, message: 'This item is not eligible for return' });
+      }
+      const windowDays = item.returnPolicy?.returnWindowDays ?? 30;
+      const deliveredAt = order.deliveredAt || order.updatedAt;
+      if (Date.now() > new Date(deliveredAt).getTime() + windowDays * 86400000) {
+        return res.status(400).json({ success: false, message: `The ${windowDays}-day return window has expired` });
+      }
+    }
+
+    const grossItemAmount = item.price * requestedQuantity;
+    const discountShare = order.subtotal > 0 ? (grossItemAmount / order.subtotal) * order.discountAmount : 0;
+    const refundAmount = Math.round(Math.max(0, grossItemAmount - discountShare) * 100) / 100;
+    order.itemReturnRequests.push({
+      orderItemId: item._id,
+      product: item.product,
+      productName: item.name,
+      variantSku: item.variantSku,
+      quantity: requestedQuantity,
+      type: delivered ? 'RETURN' : 'CANCELLATION',
+      reason: cleanReason,
+      refundAmount,
+    });
+    await order.save();
+    const createdRequest = order.itemReturnRequests[order.itemReturnRequests.length - 1];
+    emailService.sendItemReturnUpdateEmail(order, createdRequest, req.user).catch((error) =>
+      console.error('Item return request email error:', error)
+    );
+    res.status(201).json({ success: true, message: delivered ? 'Item return requested' : 'Item cancellation requested', order });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateItemReturnAdmin = async (req, res, next) => {
+  try {
+    const action = String(req.body.action || '').toUpperCase();
+    const adminNote = String(req.body.adminNote || '').trim();
+    const order = await Order.findById(req.params.id).populate('user', 'name email');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    const request = order.itemReturnRequests.id(req.params.requestId);
+    if (!request) return res.status(404).json({ success: false, message: 'Item request not found' });
+    const item = order.orderItems.id(request.orderItemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Order item not found' });
+
+    if (['APPROVE', 'REJECT'].includes(action)) {
+      if (request.status !== 'REQUESTED') {
+        return res.status(409).json({ success: false, message: 'Only a pending item request can be reviewed' });
+      }
+      if (action === 'REJECT' && adminNote.length < 5) {
+        return res.status(400).json({ success: false, message: 'Provide a reason for rejecting this request' });
+      }
+      request.status = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      request.reviewedAt = new Date();
+      if (action === 'APPROVE' && request.type === 'CANCELLATION') {
+        await restoreOrderItemStock({ ...item.toObject(), quantity: request.quantity });
+        item.cancelledQuantity += request.quantity;
+      }
+    } else if (action === 'MARK_RECEIVED') {
+      if (request.type !== 'RETURN' || request.status !== 'APPROVED') {
+        return res.status(409).json({ success: false, message: 'Only an approved return can be marked received' });
+      }
+      await restoreOrderItemStock({ ...item.toObject(), quantity: request.quantity });
+      item.returnedQuantity += request.quantity;
+      request.status = 'RECEIVED';
+      request.receivedAt = new Date();
+    } else {
+      return res.status(400).json({ success: false, message: 'Action must be APPROVE, REJECT, or MARK_RECEIVED' });
+    }
+    request.adminNote = adminNote || request.adminNote;
+    await order.save();
+    emailService.sendItemReturnUpdateEmail(order, request, order.user).catch((error) =>
+      console.error('Item return update email error:', error)
+    );
+    res.status(200).json({ success: true, message: 'Item request updated', order });
   } catch (error) {
     next(error);
   }
@@ -588,9 +1111,7 @@ export const updateOrderStatusAdmin = async (req, res, next) => {
       order.cancellationReason = note || 'Cancelled by administrator';
       // Restore stock
       for (const item of order.orderItems) {
-        await Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: item.quantity },
-        });
+        await restoreOrderItemStock(item);
       }
 
       if (order.couponCode) {

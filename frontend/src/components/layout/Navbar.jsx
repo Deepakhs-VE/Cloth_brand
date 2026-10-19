@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
@@ -52,6 +52,12 @@ export const Navbar = () => {
 
   const brandName = settings?.brandName || 'AURA';
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setUserDropdownOpen(false);
+    setSearchBarOpen(false);
+  }, [location.pathname]);
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100 transition-all">
       {/* 1. Announcement Bar */}
@@ -78,6 +84,8 @@ export const Navbar = () => {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 text-slate-700 hover:text-slate-900 focus:outline-none"
               aria-label="Toggle navigation"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -103,11 +111,14 @@ export const Navbar = () => {
           {/* Desktop Nav Links */}
           <nav className="hidden lg:flex items-center space-x-8">
             {navLinks.map((link) => {
-              const isActive = location.pathname === link.path;
+              const isActive =
+                location.pathname === link.path ||
+                (link.path === '/products' && location.pathname.startsWith('/products/'));
               return (
                 <Link
                   key={link.name}
                   to={link.path}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`text-xs uppercase tracking-widest font-medium transition-colors relative py-1 ${
                     isActive
                       ? 'text-slate-950 font-bold'
@@ -135,6 +146,7 @@ export const Navbar = () => {
               onClick={() => setSearchBarOpen(!searchBarOpen)}
               className="p-2 text-slate-700 hover:text-slate-950 hover:bg-slate-50 rounded-full transition"
               aria-label="Search products"
+              aria-expanded={searchBarOpen}
             >
               <Search className="w-5 h-5 stroke-[1.75]" />
             </button>
@@ -147,7 +159,7 @@ export const Navbar = () => {
             >
               <Heart className="w-5 h-5 stroke-[1.75]" />
               {wishlist.length > 0 && (
-                <span className="absolute 1 top-1 right-1 bg-amber-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute top-1 right-1 bg-amber-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                   {wishlist.length}
                 </span>
               )}
@@ -173,6 +185,9 @@ export const Navbar = () => {
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                   className="flex items-center space-x-2 py-1 px-2.5 rounded-full border border-slate-200 hover:border-slate-300 bg-white transition text-xs font-medium text-slate-800"
+                  aria-expanded={userDropdownOpen}
+                  aria-haspopup="menu"
+                  aria-label="Open account menu"
                 >
                   <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-bold">
                     {user?.name?.charAt(0).toUpperCase() || 'U'}
@@ -281,7 +296,7 @@ export const Navbar = () => {
             <form onSubmit={handleSearchSubmit} className="relative">
               <input
                 type="text"
-                placeholder="Search bespoke watches, headphones, duffle bags..."
+                placeholder="Search tailoring, knitwear, outerwear..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
@@ -301,13 +316,14 @@ export const Navbar = () => {
 
       {/* 4. Mobile Menu Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-100 bg-white px-4 pt-4 pb-6 space-y-4 animate-fade-in shadow-xl">
-          <nav className="flex flex-col space-y-3">
+        <div id="mobile-navigation" className="lg:hidden border-t border-slate-100 bg-white px-4 pt-4 pb-6 space-y-4 animate-fade-in shadow-xl">
+          <nav aria-label="Mobile navigation" className="flex flex-col space-y-3">
             {navLinks.map((link) => (
               <Link
                 key={link.name}
                 to={link.path}
                 onClick={() => setMobileMenuOpen(false)}
+                aria-current={location.pathname === link.path ? 'page' : undefined}
                 className="flex items-center justify-between py-2 text-sm font-medium text-slate-800 hover:text-slate-950 border-b border-slate-50"
               >
                 <span>{link.name}</span>

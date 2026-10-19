@@ -6,16 +6,19 @@ import api from '../../services/api';
 export const CategoriesSection = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchCats = async () => {
       try {
+        setError('');
         const res = await api.get('/categories');
         if (res.data.success) {
           setCategories(res.data.categories);
         }
       } catch (err) {
         console.error('Error fetching categories:', err);
+        setError('Collections are temporarily unavailable.');
       } finally {
         setLoading(false);
       }
@@ -33,6 +36,16 @@ export const CategoriesSection = () => {
               <div key={i} className="aspect-[3/4] bg-slate-200 rounded-2xl animate-pulse" />
             ))}
           </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error || categories.length === 0) {
+    return (
+      <section className="bg-slate-50/50 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-4 text-center text-sm text-slate-600 sm:px-6 lg:px-8">
+          {error || 'New collections are being prepared.'}
         </div>
       </section>
     );
@@ -73,6 +86,11 @@ export const CategoriesSection = () => {
                 alt={cat.name}
                 className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700 ease-out"
                 loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = '/image-placeholder.svg';
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent group-hover:from-slate-950/90 transition-colors" />
 

@@ -32,7 +32,7 @@ export const CartProvider = ({ children }) => {
     fetchCart();
   }, [isAuthenticated]);
 
-  const addToCart = async (productId, quantity = 1, selectedSize = 'M', selectedColor = '') => {
+  const addToCart = async (productId, quantity = 1, selectedSize = '', selectedColor = '') => {
     if (!isAuthenticated) {
       window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
       return;

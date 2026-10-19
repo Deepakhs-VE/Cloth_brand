@@ -31,6 +31,15 @@ const reviewSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    images: { type: [String], default: [] },
+    fitFeedback: {
+      type: String,
+      enum: ['', 'runs_small', 'true_to_size', 'runs_large'],
+      default: '',
+    },
+    qualityRating: { type: Number, min: 1, max: 5, default: null },
+    helpfulBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    reportedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },
   {
     timestamps: true,

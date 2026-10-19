@@ -14,9 +14,13 @@ const cartItemSchema = new mongoose.Schema({
   },
   selectedSize: {
     type: String,
-    default: 'M',
+    default: '',
   },
   selectedColor: {
+    type: String,
+    default: '',
+  },
+  variantSku: {
     type: String,
     default: '',
   },

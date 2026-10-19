@@ -4,6 +4,8 @@ import api from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
 import { useApplicationAlert } from '../context/ApplicationAlertContext';
+import { SelectDropdown } from '../components/common/SelectDropdown';
+import { europeanCountries, europeanCountryOptions, getEuropeanCountry } from '../utils/europeanCountries';
 
 export const AddressesPage = () => {
   const { showAlert, showConfirm } = useApplicationAlert();
@@ -20,7 +22,8 @@ export const AddressesPage = () => {
     city: '',
     state: '',
     postalCode: '',
-    country: 'United States',
+    country: '',
+    countryCode: '',
     isDefault: false,
     addressType: 'home',
   });
@@ -53,7 +56,8 @@ export const AddressesPage = () => {
       city: '',
       state: '',
       postalCode: '',
-      country: 'United States',
+      country: '',
+      countryCode: '',
       isDefault: false,
       addressType: 'home',
     });
@@ -71,6 +75,7 @@ export const AddressesPage = () => {
       state: addr.state,
       postalCode: addr.postalCode,
       country: addr.country,
+      countryCode: addr.countryCode || europeanCountries.find((country) => country.name === addr.country)?.code || '',
       isDefault: addr.isDefault,
       addressType: addr.addressType || 'home',
     });
@@ -320,6 +325,20 @@ export const AddressesPage = () => {
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Delivery Country *</label>
+            <SelectDropdown
+              value={formData.countryCode}
+              onChange={(countryCode) => {
+                const country = getEuropeanCountry(countryCode);
+                setFormData({ ...formData, countryCode, country: country?.name || '' });
+              }}
+              options={[{ value: '', label: 'Select a European country' }, ...europeanCountryOptions]}
+              ariaLabel="Delivery country"
+              required
+            />
           </div>
 
           <div className="flex items-center space-x-2 pt-2">

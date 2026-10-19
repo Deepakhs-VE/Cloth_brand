@@ -17,7 +17,7 @@ export const getProductReviews = async (req, res, next) => {
 
 export const submitReview = async (req, res, next) => {
   try {
-    const { productId, rating, comment } = req.body;
+    const { productId, rating, comment, images = [], fitFeedback = '', qualityRating = null } = req.body;
 
     if (!rating || !comment) {
       return res.status(400).json({ success: false, message: 'Rating and comment are required' });
@@ -41,10 +41,17 @@ export const submitReview = async (req, res, next) => {
     const orderWithProduct = await Order.findOne({
       user: req.user._id,
       'orderItems.product': productId,
-      orderStatus: { $in: ['DELIVERED', 'SHIPPED', 'CONFIRMED'] },
+      orderStatus: 'DELIVERED',
     });
 
-    const isVerifiedPurchase = Boolean(orderWithProduct);
+    if (!orderWithProduct) {
+      return res.status(403).json({
+        success: false,
+        message: 'Reviews can be submitted after this product has been delivered to you',
+      });
+    }
+
+    const isVerifiedPurchase = true;
 
     const review = await Review.create({
       product: productId,
@@ -53,6 +60,9 @@ export const submitReview = async (req, res, next) => {
       comment,
       isApproved: true, // auto-approved or can be flagged by admin
       isVerifiedPurchase,
+      images: Array.isArray(images) ? images.slice(0, 5) : [],
+      fitFeedback,
+      qualityRating: qualityRating ? Number(qualityRating) : null,
     });
 
     await review.populate('user', 'name avatar');
@@ -62,6 +72,35 @@ export const submitReview = async (req, res, next) => {
       message: 'Review submitted successfully',
       review,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const toggleReviewHelpful = async (req, res, next) => {
+  try {
+    const review = await Review.findById(req.params.id);
+    if (!review || !review.isApproved) {
+      return res.status(404).json({ success: false, message: 'Review not found' });
+    }
+    const userId = req.user._id.toString();
+    const alreadyHelpful = review.helpfulBy.some((id) => id.toString() === userId);
+    if (alreadyHelpful) review.helpfulBy.pull(req.user._id);
+    else review.helpfulBy.addToSet(req.user._id);
+    await review.save();
+    res.status(200).json({ success: true, helpful: !alreadyHelpful, helpfulCount: review.helpfulBy.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reportReview = async (req, res, next) => {
+  try {
+    const review = await Review.findById(req.params.id);
+    if (!review) return res.status(404).json({ success: false, message: 'Review not found' });
+    review.reportedBy.addToSet(req.user._id);
+    await review.save();
+    res.status(200).json({ success: true, message: 'Review reported for moderation' });
   } catch (error) {
     next(error);
   }

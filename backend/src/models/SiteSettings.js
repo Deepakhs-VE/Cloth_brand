@@ -8,6 +8,12 @@ const siteSettingsSchema = new mongoose.Schema(
       default: 'AURA',
       required: true,
     },
+    legalBusiness: {
+      legalName: { type: String, default: 'AURA Atelier' },
+      vatNumber: { type: String, default: '' },
+      companyRegistrationNumber: { type: String, default: '' },
+      registeredAddress: { type: String, default: '' },
+    },
     tagline: {
       type: String,
       default: 'Elevate Everyday Living with Timeless Modern Essentials',
@@ -67,8 +73,35 @@ const siteSettingsSchema = new mongoose.Schema(
     },
     announcementBar: {
       isEnabled: { type: Boolean, default: true },
-      text: { type: String, default: 'Complimentary Worldwide Express Shipping on Orders Over $150 • 30-Day Effortless Returns' },
+      text: { type: String, default: 'Complimentary European Express Delivery on Orders Over €150 • 30-Day Effortless Returns' },
       link: { type: String, default: '/products' },
+    },
+    commerce: {
+      baseCurrencyCode: { type: String, default: 'EUR', uppercase: true, trim: true },
+      currencyCode: { type: String, default: 'EUR', uppercase: true, trim: true },
+      exchangeRateCache: {
+        baseCurrency: { type: String, default: 'EUR', uppercase: true },
+        rates: { type: [[String]], default: [] },
+        fetchedAt: { type: Date, default: null },
+        provider: { type: String, default: '' },
+      },
+      locale: { type: String, default: 'en-IE', trim: true },
+      pricesIncludeVat: { type: Boolean, default: true },
+      defaultVatRate: { type: Number, min: 0, max: 100, default: 20 },
+      countryVatRates: {
+        type: [{ countryCode: { type: String, uppercase: true, trim: true }, rate: { type: Number, min: 0, max: 100 } }],
+        default: [],
+      },
+      freeShippingThreshold: { type: Number, min: 0, default: 150 },
+      standardShippingAmount: { type: Number, min: 0, default: 15 },
+      defaultReturnWindowDays: { type: Number, min: 0, default: 30 },
+      defaultExchangeWindowDays: { type: Number, min: 0, default: 30 },
+      dispatchMinDays: { type: Number, min: 0, default: 1 },
+      dispatchMaxDays: { type: Number, min: 0, default: 2 },
+      deliveryMinDays: { type: Number, min: 1, default: 3 },
+      deliveryMaxDays: { type: Number, min: 1, default: 7 },
+      supportedCountries: { type: [String], default: [] },
+      blockedPostalPrefixes: { type: [String], default: [] },
     },
     policies: {
       privacyPolicy: {
@@ -100,7 +133,7 @@ const siteSettingsSchema = new mongoose.Schema(
         {
           icon: 'Truck',
           title: 'Worldwide Express',
-          description: 'Complimentary shipping over $150',
+          description: 'Complimentary European delivery over €150',
         },
         {
           icon: 'ShieldCheck',

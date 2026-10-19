@@ -15,6 +15,7 @@ const allowedPurposes = new Set([
   'categories',
   'testimonials',
   'branding',
+  'reviews',
   'general',
 ]);
 

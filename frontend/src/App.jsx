@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 
 // Providers
 import { AuthProvider } from './context/AuthContext';
@@ -7,6 +7,7 @@ import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { ApplicationAlertProvider } from './context/ApplicationAlertContext';
+import { useSettings } from './context/SettingsContext';
 
 // Layout & Guards
 import { Navbar } from './components/layout/Navbar';
@@ -15,6 +16,7 @@ import { CartDrawer } from './components/layout/CartDrawer';
 import { FloatingWhatsApp } from './components/layout/FloatingWhatsApp';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AdminRoute } from './components/layout/AdminRoute';
+import { CookieConsent } from './components/common/CookieConsent';
 
 const lazyNamed = (importer, exportName) =>
   lazy(() => importer().then((module) => ({ default: module[exportName] })));
@@ -64,6 +66,40 @@ function ScrollToTop() {
   return null;
 }
 
+const routeMeta = {
+  '/': ['Modern Luxury Fashion', 'Discover modern tailoring, natural fibres, and timeless pieces.'],
+  '/products': ['Shop the Collection', 'Browse the complete collection of thoughtfully crafted fashion.'],
+  '/offers': ['Offers', 'Explore current privileges, promotional codes, and preferred pricing.'],
+  '/about': ['Our Story', 'Discover the craftsmanship and principles behind the atelier.'],
+  '/contact': ['Contact', 'Contact our client-care team for product, sizing, delivery, or order assistance.'],
+  '/policies': ['Policies', 'Review shipping, returns, privacy, and terms of service.'],
+  '/cart': ['Shopping Bag', 'Review the pieces in your shopping bag.'],
+  '/checkout': ['Secure Checkout', 'Complete your order through our secure checkout.'],
+};
+
+function PageMetadata() {
+  const { pathname } = useLocation();
+  const { settings } = useSettings();
+  const brandName = settings?.brandName || 'AURA Atelier';
+  const basePath = pathname.startsWith('/products/') ? '/products' : pathname;
+  const [pageTitle, description] = routeMeta[basePath] || [
+    pathname.startsWith('/admin') ? 'Administration' : 'Account',
+    `Manage your ${brandName} experience.`,
+  ];
+
+  useEffect(() => {
+    document.title = `${pageTitle} | ${brandName}`;
+    const descriptionTag = document.querySelector('meta[name="description"]');
+    if (descriptionTag) descriptionTag.setAttribute('content', description);
+
+    const robotsTag = document.querySelector('meta[name="robots"]');
+    const isPrivate = pathname.startsWith('/admin') || pathname.startsWith('/account') || pathname === '/checkout';
+    if (robotsTag) robotsTag.setAttribute('content', isPrivate ? 'noindex, nofollow' : 'index, follow');
+  }, [brandName, description, pageTitle, pathname]);
+
+  return null;
+}
+
 function AppContent() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
@@ -71,11 +107,14 @@ function AppContent() {
   return (
     <div className="flex flex-col min-h-screen">
       <ScrollToTop />
+      <PageMetadata />
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       {!isAdminRoute && <Navbar />}
       <CartDrawer />
       {!isAdminRoute && <FloatingWhatsApp />}
+      {!isAdminRoute && <CookieConsent />}
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1" tabIndex="-1">
         <div key={location.pathname} className="route-transition">
           <Suspense fallback={<div className="min-h-[50vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /></div>}>
           <Routes>
@@ -255,12 +294,12 @@ function AppContent() {
               <div className="py-28 text-center bg-[#fcfbfa]">
                 <h1 className="font-luxury text-4xl font-extrabold text-slate-900 mb-2">404</h1>
                 <p className="text-sm text-slate-500 mb-6">The requested page does not exist.</p>
-                <a
-                  href="/"
+                <Link
+                  to="/"
                   className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs uppercase tracking-wider font-bold"
                 >
                   Return Home
-                </a>
+                </Link>
               </div>
             }
           />

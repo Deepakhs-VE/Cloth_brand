@@ -16,10 +16,11 @@ import { useSettings } from '../../context/SettingsContext';
 import { InternationalPhoneInput, isPhoneValid } from '../../components/common/InternationalPhoneInput';
 import { ImageUpload } from '../../components/common/ImageUpload';
 import { useApplicationAlert } from '../../context/ApplicationAlertContext';
+import { SelectDropdown } from '../../components/common/SelectDropdown';
 
 export const AdminSettingsPage = () => {
   const { showAlert } = useApplicationAlert();
-  const { refreshSettings } = useSettings();
+  const { syncSettings } = useSettings();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -29,6 +30,27 @@ export const AdminSettingsPage = () => {
     brandName: '',
     tagline: '',
     logoUrl: '',
+    legalBusiness: {
+      legalName: '',
+      vatNumber: '',
+      companyRegistrationNumber: '',
+      registeredAddress: '',
+    },
+    commerce: {
+      currencyCode: 'EUR',
+      locale: 'en-IE',
+      pricesIncludeVat: true,
+      defaultVatRate: 20,
+      countryVatRates: [],
+      freeShippingThreshold: 150,
+      standardShippingAmount: 15,
+      defaultReturnWindowDays: 30,
+      defaultExchangeWindowDays: 30,
+      deliveryMinDays: 3,
+      deliveryMaxDays: 7,
+      supportedCountries: [],
+      blockedPostalPrefixes: [],
+    },
     hero: {
       badge: '',
       title: '',
@@ -75,6 +97,10 @@ export const AdminSettingsPage = () => {
       shippingPolicy: '',
     },
     aboutUs: {
+      title: '',
+      subtitle: '',
+      content: '',
+      stats: [],
       imageUrl: '',
     },
   });
@@ -116,8 +142,9 @@ export const AdminSettingsPage = () => {
     try {
       const res = await api.put('/settings', settings);
       if (res.data.success) {
+        setSettings(res.data.settings);
+        syncSettings(res.data.settings);
         setSuccessMsg('Settings updated successfully!');
-        await refreshSettings();
         setTimeout(() => setSuccessMsg(''), 4000);
       }
     } catch (err) {
@@ -141,6 +168,7 @@ export const AdminSettingsPage = () => {
     { key: 'brand', label: 'Brand & Announcement', icon: Globe },
     { key: 'hero', label: 'Hero Showcase', icon: Sliders },
     { key: 'offer', label: 'Promo Banner', icon: Sparkles },
+    { key: 'commerce', label: 'Commerce & Delivery', icon: Settings },
     { key: 'contact', label: 'Contact & WhatsApp', icon: PhoneCall },
     { key: 'social', label: 'Social Networks', icon: Share2 },
     { key: 'policies', label: 'Client Policies', icon: FileText },
@@ -248,6 +276,56 @@ export const AdminSettingsPage = () => {
                 />
               </div>
 
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  About Us Content
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
+                      Section Label
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.aboutUs?.subtitle || ''}
+                      onChange={(e) => setSettings({
+                        ...settings,
+                        aboutUs: { ...settings.aboutUs, subtitle: e.target.value },
+                      })}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
+                      About Title
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.aboutUs?.title || ''}
+                      onChange={(e) => setSettings({
+                        ...settings,
+                        aboutUs: { ...settings.aboutUs, title: e.target.value },
+                      })}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
+                    About Description
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={settings.aboutUs?.content || ''}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      aboutUs: { ...settings.aboutUs, content: e.target.value },
+                    })}
+                    className="w-full resize-none p-2.5 bg-white border border-slate-200 rounded-xl text-xs leading-relaxed"
+                  />
+                </div>
+              </div>
+
               <div className="pt-6 border-t border-slate-100 space-y-4">
                 <div className="flex items-center space-x-2">
                   <input
@@ -294,6 +372,9 @@ export const AdminSettingsPage = () => {
           {activeTab === 'hero' && (
             <div className="space-y-6">
               <h3 className="font-luxury text-lg font-bold text-slate-900">Hero Section Showcase</h3>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                These fields control the light-theme homepage hero, including its text, links, and feature image.
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">
@@ -366,18 +447,24 @@ export const AdminSettingsPage = () => {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-                    Primary CTA Link
+                    Primary Button Destination
                   </label>
-                  <input
-                    type="text"
+                  <SelectDropdown
                     value={settings.hero?.ctaLink || ''}
-                    onChange={(e) =>
+                    onChange={(ctaLink) =>
                       setSettings({
                         ...settings,
-                        hero: { ...settings.hero, ctaLink: e.target.value },
+                        hero: { ...settings.hero, ctaLink },
                       })
                     }
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
+                    options={[
+                      { value: '/products', label: 'Shop all products' },
+                      { value: '/products?isFeatured=true', label: 'Shop featured products' },
+                      { value: '/offers', label: 'View offers' },
+                      { value: '/contact', label: 'Contact us' },
+                      { value: '/about', label: 'About our brand' },
+                    ]}
+                    ariaLabel="Primary button destination"
                   />
                 </div>
                 <div>
@@ -398,18 +485,24 @@ export const AdminSettingsPage = () => {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-                    Secondary CTA Link
+                    Secondary Button Destination
                   </label>
-                  <input
-                    type="text"
+                  <SelectDropdown
                     value={settings.hero?.secondaryCtaLink || ''}
-                    onChange={(e) =>
+                    onChange={(secondaryCtaLink) =>
                       setSettings({
                         ...settings,
-                        hero: { ...settings.hero, secondaryCtaLink: e.target.value },
+                        hero: { ...settings.hero, secondaryCtaLink },
                       })
                     }
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
+                    options={[
+                      { value: '/products', label: 'Shop all products' },
+                      { value: '/products?isFeatured=true', label: 'Shop featured products' },
+                      { value: '/offers', label: 'View offers' },
+                      { value: '/contact', label: 'Contact us' },
+                      { value: '/about', label: 'About our brand' },
+                    ]}
+                    ariaLabel="Secondary button destination"
                   />
                 </div>
               </div>
@@ -497,6 +590,97 @@ export const AdminSettingsPage = () => {
           )}
 
           {/* 4. Contact & WhatsApp Tab */}
+          {activeTab === 'commerce' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-luxury text-lg font-bold text-slate-900">European Commerce & Delivery</h3>
+                <p className="mt-1 text-xs text-slate-500">Controls storefront currency, VAT-inclusive pricing, delivery charges, and default return windows.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Currency code</label>
+                  <SelectDropdown
+                    value={settings.commerce?.currencyCode || 'EUR'}
+                    onChange={(currencyCode) => setSettings({
+                      ...settings,
+                      commerce: {
+                        ...settings.commerce,
+                        currencyCode,
+                        locale: ({ EUR: 'en-IE', USD: 'en-US', GBP: 'en-GB', INR: 'en-IN' })[currencyCode] || 'en-IE',
+                      },
+                    })}
+                    options={[
+                      { value: 'EUR', label: 'EUR — Euro' },
+                      { value: 'USD', label: 'USD — US Dollar' },
+                      { value: 'GBP', label: 'GBP — British Pound' },
+                      { value: 'INR', label: 'INR — Indian Rupee' },
+                    ]}
+                    ariaLabel="Store currency"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Default VAT rate (%)</label>
+                  <input type="number" min="0" max="100" step="0.01" value={settings.commerce?.defaultVatRate ?? 20} onChange={(e) => setSettings({ ...settings, commerce: { ...settings.commerce, defaultVatRate: Number(e.target.value) } })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs" />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+                <input type="checkbox" checked={settings.commerce?.pricesIncludeVat !== false} onChange={(e) => setSettings({ ...settings, commerce: { ...settings.commerce, pricesIncludeVat: e.target.checked } })} className="h-4 w-4 rounded" />
+                Display and charge VAT-inclusive prices (recommended for European consumers)
+              </label>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {[
+                  ['freeShippingThreshold', 'Free delivery from'],
+                  ['standardShippingAmount', 'Standard delivery charge'],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">{label}</label>
+                    <input type="number" min={key === 'defaultReturnWindowDays' ? 14 : 0} step="0.01" value={settings.commerce?.[key] ?? 0} onChange={(e) => setSettings({ ...settings, commerce: { ...settings.commerce, [key]: Number(e.target.value) } })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs" />
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Default return days</label>
+                  <SelectDropdown value={String(settings.commerce?.defaultReturnWindowDays ?? 30)} onChange={(value) => setSettings({ ...settings, commerce: { ...settings.commerce, defaultReturnWindowDays: Number(value) } })} options={[{ value: '14', label: '14 days' }, { value: '30', label: '30 days' }]} ariaLabel="Default return days" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Default exchange days</label>
+                  <SelectDropdown value={String(settings.commerce?.defaultExchangeWindowDays ?? 30)} onChange={(value) => setSettings({ ...settings, commerce: { ...settings.commerce, defaultExchangeWindowDays: Number(value) } })} options={[{ value: '7', label: '7 days' }, { value: '14', label: '14 days' }, { value: '30', label: '30 days' }]} ariaLabel="Default exchange days" />
+                </div>
+              </div>
+              {false && <div>
+                <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Destination VAT rates</label>
+                <input
+                  value={(settings.commerce?.countryVatRates || []).map((entry) => `${entry.countryCode}:${entry.rate}`).join(', ')}
+                  placeholder="IE:23, DE:19, FR:20"
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    commerce: {
+                      ...settings.commerce,
+                      countryVatRates: e.target.value.split(',').map((entry) => {
+                        const [countryCode, rate] = entry.split(':');
+                        return { countryCode: countryCode?.trim().toUpperCase(), rate: Number(rate) };
+                      }).filter((entry) => /^[A-Z]{2}$/.test(entry.countryCode) && Number.isFinite(entry.rate)),
+                    },
+                  })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">Used for destination-based VAT. Confirm registrations and rates with the client’s tax adviser.</p>
+              </div>}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Legal business name</label>
+                  <input value={settings.legalBusiness?.legalName || ''} onChange={(e) => setSettings({ ...settings, legalBusiness: { ...settings.legalBusiness, legalName: e.target.value } })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">VAT number</label>
+                  <input value={settings.legalBusiness?.vatNumber || ''} onChange={(e) => setSettings({ ...settings, legalBusiness: { ...settings.legalBusiness, vatNumber: e.target.value } })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs uppercase" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Contact & WhatsApp Tab */}
           {activeTab === 'contact' && (
             <div className="space-y-6">
               <h3 className="font-luxury text-lg font-bold text-slate-900">Concierge & WhatsApp</h3>

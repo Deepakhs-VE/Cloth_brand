@@ -4,21 +4,14 @@ import { Tag, Copy, Check, ArrowRight } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
 
 export const SpecialOfferBanner = () => {
-  const { settings } = useSettings();
+  const { settings, loading } = useSettings();
   const [copied, setCopied] = useState(false);
 
-  const offer = settings?.specialOfferBanner || {
-    isEnabled: true,
-    badge: 'EXCLUSIVE PRIVILEGE',
-    title: 'Unlock 20% Off Your Curated Order',
-    subtitle: 'Apply code LUXE2026 at checkout. Complimentary global express shipping included.',
-    couponCode: 'LUXE2026',
-    discountText: '20% OFF',
-    buttonText: 'Claim Your Privilege',
-    buttonLink: '/products',
-  };
+  const offer = settings?.specialOfferBanner;
 
-  if (!offer.isEnabled) return null;
+  // Never advertise a placeholder or unverified coupon while settings load.
+  const hasExpired = offer?.endDate && new Date(offer.endDate).getTime() < Date.now();
+  if (loading || !offer?.isEnabled || hasExpired) return null;
 
   const handleCopyCode = () => {
     if (offer.couponCode) {

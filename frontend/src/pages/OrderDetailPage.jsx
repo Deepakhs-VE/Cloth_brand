@@ -11,14 +11,17 @@ import {
   MapPin,
   CreditCard,
   X,
+  FileDown,
 } from 'lucide-react';
 import api from '../services/api';
 import { OrderStatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { getProductPath } from '../utils/productPath';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const OrderDetailPage = () => {
   const { id } = useParams();
+  const { formatMoney } = useCurrency();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -27,6 +30,21 @@ export const OrderDetailPage = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState('');
+  const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
+  const [exchangeItem, setExchangeItem] = useState(null);
+  const [exchangeVariants, setExchangeVariants] = useState([]);
+  const [exchangeSize, setExchangeSize] = useState('');
+  const [exchangeColor, setExchangeColor] = useState('');
+  const [exchangeReason, setExchangeReason] = useState('');
+  const [exchangeError, setExchangeError] = useState('');
+  const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
+  const [itemReturnModalOpen, setItemReturnModalOpen] = useState(false);
+  const [itemReturnItem, setItemReturnItem] = useState(null);
+  const [itemReturnQuantity, setItemReturnQuantity] = useState(1);
+  const [itemReturnReason, setItemReturnReason] = useState('');
+  const [itemReturnError, setItemReturnError] = useState('');
+  const [itemReturnSubmitting, setItemReturnSubmitting] = useState(false);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
 
   const fetchOrder = async () => {
     try {
@@ -66,6 +84,107 @@ export const OrderDetailPage = () => {
       setCancelError(err.response?.data?.message || 'Error cancelling order');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const openExchange = async (item) => {
+    setExchangeError('');
+    setExchangeItem(item);
+    setExchangeReason('');
+    try {
+      const response = await api.get(`/products/${item.slug || item.product}`);
+      const variants = (response.data.product?.variants || []).filter(
+        (variant) => variant.isActive !== false && variant.stock >= item.quantity && variant.sku !== item.variantSku
+      );
+      setExchangeVariants(variants);
+      setExchangeColor(variants[0]?.color || '');
+      setExchangeSize(variants[0]?.size || '');
+      setExchangeModalOpen(true);
+    } catch (error) {
+      setExchangeError(error.response?.data?.message || 'Replacement options could not be loaded');
+      setExchangeModalOpen(true);
+    }
+  };
+
+  const submitExchange = async (event) => {
+    event.preventDefault();
+    setExchangeSubmitting(true);
+    setExchangeError('');
+    try {
+      const response = await api.post(`/orders/${order._id}/exchanges`, {
+        orderItemId: exchangeItem._id,
+        toSize: exchangeSize,
+        toColor: exchangeColor,
+        reason: exchangeReason,
+      });
+      setOrder(response.data.order);
+      setExchangeModalOpen(false);
+    } catch (error) {
+      setExchangeError(error.response?.data?.message || 'Exchange request could not be submitted');
+    } finally {
+      setExchangeSubmitting(false);
+    }
+  };
+
+  const remainingRequestQuantity = (item) => {
+    const pending = (order?.itemReturnRequests || [])
+      .filter((request) => String(request.orderItemId) === String(item._id) && !['REJECTED', 'COMPLETED'].includes(request.status))
+      .reduce((sum, request) => sum + Number(request.quantity || 0), 0);
+    return Math.max(0, Number(item.quantity || 0) - Number(item.cancelledQuantity || 0) - Number(item.returnedQuantity || 0) - pending);
+  };
+
+  const isItemReturnEligible = (item) => {
+    if (!order?.isPaid || order.paymentStatus !== 'PAID' || remainingRequestQuantity(item) < 1) return false;
+    if (['PENDING', 'CONFIRMED', 'PROCESSING'].includes(order.orderStatus)) return true;
+    if (order.orderStatus !== 'DELIVERED' || item.returnPolicy?.finalSale || item.returnPolicy?.returnable === false) return false;
+    const days = item.returnPolicy?.returnWindowDays ?? 30;
+    const deliveredAt = order.deliveredAt || order.updatedAt;
+    return Date.now() <= new Date(deliveredAt).getTime() + days * 86400000;
+  };
+
+  const openItemReturn = (item) => {
+    setItemReturnItem(item);
+    setItemReturnQuantity(1);
+    setItemReturnReason('');
+    setItemReturnError('');
+    setItemReturnModalOpen(true);
+  };
+
+  const submitItemReturn = async (event) => {
+    event.preventDefault();
+    setItemReturnSubmitting(true);
+    setItemReturnError('');
+    try {
+      const response = await api.post(`/orders/${order._id}/item-returns`, {
+        orderItemId: itemReturnItem._id,
+        quantity: Number(itemReturnQuantity),
+        reason: itemReturnReason,
+      });
+      setOrder(response.data.order);
+      setItemReturnModalOpen(false);
+    } catch (error) {
+      setItemReturnError(error.response?.data?.message || 'Your request could not be submitted');
+    } finally {
+      setItemReturnSubmitting(false);
+    }
+  };
+
+  const downloadInvoice = async () => {
+    setInvoiceDownloading(true);
+    try {
+      const response = await api.get(`/orders/${order._id}/invoice`, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${order.orderNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Invoice download failed:', error);
+    } finally {
+      setInvoiceDownloading(false);
     }
   };
 
@@ -118,19 +237,8 @@ export const OrderDetailPage = () => {
     order.paymentStatus === 'PAID' &&
     ['PENDING', 'CONFIRMED', 'PROCESSING'].includes(order.orderStatus) &&
     !hasActiveRefundRequest;
-  const returnWindowEndsAt = order.deliveredAt
-    ? new Date(order.deliveredAt).getTime() + 30 * 24 * 60 * 60 * 1000
-    : 0;
-  const isReturnRequest =
-    order.isPaid &&
-    order.paymentStatus === 'PAID' &&
-    order.orderStatus === 'DELIVERED' &&
-    Date.now() <= returnWindowEndsAt &&
-    !hasActiveRefundRequest;
-  const canOpenRequest = isUnpaidCancellable || isPaidCancellationRequest || isReturnRequest;
-  const requestButtonLabel = isReturnRequest
-    ? 'Request Return & Refund'
-    : isPaidCancellationRequest
+  const canOpenRequest = isUnpaidCancellable || isPaidCancellationRequest;
+  const requestButtonLabel = isPaidCancellationRequest
     ? 'Request Cancellation & Refund'
     : 'Cancel Order';
 
@@ -159,14 +267,26 @@ export const OrderDetailPage = () => {
           </div>
 
           {/* Cancellation / return action when eligible */}
-          {canOpenRequest && (
-            <button
-              onClick={() => setCancelModalOpen(true)}
-              className="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold uppercase tracking-wider transition self-start sm:self-auto"
-            >
-              {requestButtonLabel}
-            </button>
-          )}
+          <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+            {order.isPaid && (
+              <button
+                type="button"
+                onClick={downloadInvoice}
+                disabled={invoiceDownloading}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 hover:bg-white rounded-xl text-xs font-bold uppercase tracking-wider transition disabled:opacity-50"
+              >
+                <FileDown className="h-4 w-4" /> {invoiceDownloading ? 'Preparing...' : 'VAT Invoice'}
+              </button>
+            )}
+            {canOpenRequest && (
+              <button
+                onClick={() => setCancelModalOpen(true)}
+                className="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold uppercase tracking-wider transition"
+              >
+                {requestButtonLabel}
+              </button>
+            )}
+          </div>
         </div>
 
         {order.refundRequest && (
@@ -261,7 +381,7 @@ export const OrderDetailPage = () => {
         {/* Order Items Table */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
           <h2 className="font-luxury text-base font-bold text-slate-900">
-            Acquisition Details
+            Order Summary
           </h2>
 
           <div className="divide-y divide-slate-100">
@@ -297,19 +417,59 @@ export const OrderDetailPage = () => {
                         </Link>
                       ) : item.name}
                     </h4>
-                    <div className="flex items-center space-x-2 mt-0.5 text-[11px] text-slate-500">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-slate-600">
                       <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
-                        Size: {item.selectedSize || 'M'}
+                        Size: {item.selectedSize || 'Not specified'}
                       </span>
-                      {item.selectedColor && <span>• {item.selectedColor}</span>}
+                      <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                        Colour: {item.selectedColor || 'Not specified'}
+                      </span>
+                      <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                        Quantity: {item.quantity}
+                      </span>
+                      {item.variantSku && (
+                        <span className="font-mono text-slate-500 px-1.5 py-0.5">SKU: {item.variantSku}</span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      ${item.price.toFixed(2)} × {item.quantity}
+                      Unit price: {formatMoney(item.price || 0, order.currency)}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                    {isItemReturnEligible(item) && (
+                      <button
+                        type="button"
+                        onClick={() => openItemReturn(item)}
+                        className="text-[10px] font-bold uppercase tracking-wider text-rose-700 hover:text-rose-900 underline underline-offset-2"
+                      >
+                        {order.orderStatus === 'DELIVERED' ? 'Return this item' : 'Cancel this item'}
+                      </button>
+                    )}
+                    {order.isPaid && order.orderStatus === 'DELIVERED'
+                      && item.returnPolicy?.exchangeable !== false
+                      && Date.now() <= new Date(order.deliveredAt || order.updatedAt).getTime() + (item.returnPolicy?.exchangeWindowDays ?? 30) * 86400000
+                      && item.variantSku && !order.exchangeRequests?.some(
+                      (request) => request.orderItemId === item._id && !['REJECTED', 'COMPLETED'].includes(request.status)
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => openExchange(item)}
+                        className="mt-2 text-[10px] font-bold uppercase tracking-wider text-amber-700 hover:text-amber-900 underline underline-offset-2"
+                      >
+                        Exchange size or colour
+                      </button>
+                    )}
+                    </div>
+                    {item.returnPolicy?.finalSale ? (
+                      <p className="mt-2 text-[10px] font-semibold text-rose-600">Final sale — returns unavailable</p>
+                    ) : (
+                      <p className="mt-2 text-[10px] text-slate-400">
+                        {item.returnPolicy?.returnWindowDays ?? 30}-day returns · {item.returnPolicy?.exchangeWindowDays ?? 30}-day exchanges
+                      </p>
+                    )}
                   </div>
                 </div>
                 <span className="font-bold text-xs text-slate-900">
-                  ${item.total.toFixed(2)}
+                  {formatMoney(item.total ?? item.price * item.quantity, order.currency)}
                 </span>
               </div>
               );
@@ -320,25 +480,25 @@ export const OrderDetailPage = () => {
           <div className="pt-4 border-t border-slate-100 space-y-2 text-xs text-slate-600 max-w-xs ml-auto">
             <div className="flex justify-between">
               <span>Subtotal</span>
-              <span className="font-semibold text-slate-900">${order.subtotal.toFixed(2)}</span>
+              <span className="font-semibold text-slate-900">{formatMoney(order.subtotal || 0, order.currency)}</span>
             </div>
             {order.discountAmount > 0 && (
               <div className="flex justify-between text-emerald-600 font-semibold">
                 <span>Coupon Discount ({order.couponCode})</span>
-                <span>-${order.discountAmount.toFixed(2)}</span>
+                <span>-{formatMoney(order.discountAmount || 0, order.currency)}</span>
               </div>
             )}
             <div className="flex justify-between">
               <span>Courier Delivery</span>
-              <span className="font-semibold text-slate-900">${order.shippingAmount.toFixed(2)}</span>
+              <span className="font-semibold text-slate-900">{formatMoney(order.shippingAmount || 0, order.currency)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Taxes</span>
-              <span className="font-semibold text-slate-900">${order.taxAmount.toFixed(2)}</span>
+              <span>{order.pricesIncludeVat ? 'VAT included' : 'VAT'}</span>
+              <span className="font-semibold text-slate-900">{formatMoney(order.taxAmount || 0, order.currency)}</span>
             </div>
             <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline font-bold text-sm text-slate-900">
               <span>Total Paid</span>
-              <span className="font-luxury text-lg text-slate-900">${order.totalAmount.toFixed(2)}</span>
+              <span className="font-luxury text-lg text-slate-900">{formatMoney(order.totalAmount || 0, order.currency)}</span>
             </div>
           </div>
         </div>
@@ -358,7 +518,9 @@ export const OrderDetailPage = () => {
                 {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.postalCode}
               </p>
               <p>{order.shippingAddress.country}</p>
-              <p className="text-slate-400 pt-1">Tel: {order.shippingAddress.phone}</p>
+              <a className="inline-block text-slate-500 pt-1 hover:text-slate-900" href={`tel:${order.shippingAddress.phone}`}>
+                Tel: {order.shippingAddress.phone}
+              </a>
             </div>
           </div>
 
@@ -371,36 +533,91 @@ export const OrderDetailPage = () => {
               <p>
                 Method:{' '}
                 <span className="font-bold uppercase text-slate-900">
-                  {order.paymentMethod.replace(/_/g, ' ')}
+                  {(order.paymentMethod || 'Not available').replace(/_/g, ' ')}
                 </span>
               </p>
               <p>
                 Status:{' '}
-                <span className="font-bold text-emerald-600 uppercase">
-                  {order.paymentStatus}
+                <span className={`font-bold uppercase ${
+                  order.paymentStatus === 'PAID'
+                    ? 'text-emerald-600'
+                    : order.paymentStatus === 'REFUNDED'
+                    ? 'text-violet-600'
+                    : 'text-amber-600'
+                }`}>
+                  {order.paymentStatus || 'Pending'}
                 </span>
               </p>
-              {order.paymentResult?.transactionId && (
-                <p className="font-mono text-[11px] text-slate-400">
-                  Tx: {order.paymentResult.transactionId}
+              {(order.paidAt || order.paymentResult?.updateTime) && (
+                <p>
+                  Paid on:{' '}
+                  <span className="font-semibold text-slate-900">
+                    {new Date(order.paidAt || order.paymentResult.updateTime).toLocaleString()}
+                  </span>
+                </p>
+              )}
+              {order.paymentResult?.emailAddress && (
+                <p>
+                  Receipt email: <span className="font-semibold text-slate-900">{order.paymentResult.emailAddress}</span>
+                </p>
+              )}
+              {(order.paymentResult?.transactionId || order.paymentResult?.id) && (
+                <p className="font-mono text-[11px] text-slate-400 break-all pt-1">
+                  Transaction: {order.paymentResult.transactionId || order.paymentResult.id}
                 </p>
               )}
             </div>
           </div>
         </div>
+
+        {order.exchangeRequests?.length > 0 && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+            <h2 className="font-luxury text-base font-bold text-slate-900">Exchange Requests</h2>
+            {order.exchangeRequests.map((request) => (
+              <div key={request._id} className="rounded-2xl border border-slate-200 p-4 text-xs">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <p className="font-bold text-slate-900">{request.productName}</p>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800">{request.status}</span>
+                </div>
+                <p className="mt-2 text-slate-600">
+                  {request.fromColor || 'Default'} / {request.fromSize || 'One size'} → {request.toColor || 'Default'} / {request.toSize || 'One size'}
+                </p>
+                <p className="mt-1 text-slate-500">Reason: {request.reason}</p>
+                {request.adminNote && <p className="mt-1 text-slate-500">Store update: {request.adminNote}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {order.itemReturnRequests?.length > 0 && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+            <h2 className="font-luxury text-base font-bold text-slate-900">Item Returns & Cancellations</h2>
+            {order.itemReturnRequests.map((request) => (
+              <div key={request._id} className="rounded-2xl border border-slate-200 p-4 text-xs">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <p className="font-bold text-slate-900">{request.productName} · Qty {request.quantity}</p>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase text-amber-800">
+                    {request.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <p className="mt-2 text-slate-600">{request.type === 'RETURN' ? 'Return' : 'Cancellation'} · Expected refund {formatMoney(request.refundAmount || 0, order.currency)}</p>
+                <p className="mt-1 text-slate-500">Reason: {request.reason}</p>
+                {request.adminNote && <p className="mt-1 text-slate-500">Store update: {request.adminNote}</p>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cancel Order Modal */}
       <Modal
         isOpen={cancelModalOpen}
         onClose={() => setCancelModalOpen(false)}
-        title={isReturnRequest ? 'Request a Return & Refund' : order?.isPaid ? 'Request Cancellation & Refund' : 'Cancel This Order'}
+        title={order?.isPaid ? 'Request Cancellation & Refund' : 'Cancel This Order'}
       >
         <form onSubmit={handleCancelOrder} className="space-y-4">
           <p className="text-xs text-slate-600">
-            {isReturnRequest
-              ? 'Returns are reviewed by the store. After approval, send the complete order back; Stripe refunds the original payment after the parcel is received and inspected.'
-              : order?.isPaid
+            {order?.isPaid
               ? 'The store must approve this request before your original Stripe payment is refunded. Orders already in transit cannot be cancelled.'
               : 'Cancelling will close the unpaid Stripe session and restore the reserved inventory.'}
           </p>
@@ -413,7 +630,7 @@ export const OrderDetailPage = () => {
 
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-              {isReturnRequest ? 'Reason for Return' : 'Reason for Cancellation'}
+              Reason for Cancellation
             </label>
             <textarea
               rows={3}
@@ -421,7 +638,7 @@ export const OrderDetailPage = () => {
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               minLength={10}
-              placeholder={isReturnRequest ? 'Explain why you are returning this order' : 'e.g. Changed preference or incorrect delivery address'}
+              placeholder="e.g. Changed preference or incorrect delivery address"
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
             />
           </div>
@@ -436,6 +653,98 @@ export const OrderDetailPage = () => {
               : order?.isPaid
               ? 'Submit Request'
               : 'Confirm Cancellation'}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={itemReturnModalOpen}
+        onClose={() => setItemReturnModalOpen(false)}
+        title={order?.orderStatus === 'DELIVERED' ? 'Return Item' : 'Cancel Item'}
+      >
+        <form onSubmit={submitItemReturn} className="space-y-4">
+          <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+            <p className="font-bold text-slate-900">{itemReturnItem?.name}</p>
+            <p className="mt-1">{itemReturnItem?.selectedColor || 'Default colour'} · {itemReturnItem?.selectedSize || 'One size'}</p>
+          </div>
+          {itemReturnError && <p className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{itemReturnError}</p>}
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase text-slate-700">Quantity</label>
+            <select
+              value={itemReturnQuantity}
+              onChange={(event) => setItemReturnQuantity(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs"
+            >
+              {Array.from({ length: itemReturnItem ? remainingRequestQuantity(itemReturnItem) : 0 }, (_, index) => index + 1).map((quantity) => (
+                <option key={quantity} value={quantity}>{quantity}</option>
+              ))}
+            </select>
+          </div>
+          <textarea
+            required
+            minLength={10}
+            rows={3}
+            value={itemReturnReason}
+            onChange={(event) => setItemReturnReason(event.target.value)}
+            placeholder="Tell us why you need this return or cancellation"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={itemReturnSubmitting}
+            className="w-full rounded-xl bg-slate-900 py-3 text-xs font-bold uppercase tracking-wider text-white disabled:opacity-50"
+          >
+            {itemReturnSubmitting ? 'Submitting...' : 'Submit Request'}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={exchangeModalOpen}
+        onClose={() => setExchangeModalOpen(false)}
+        title="Exchange Size or Colour"
+      >
+        <form onSubmit={submitExchange} className="space-y-4">
+          <p className="text-xs text-slate-600">
+            Choose an in-stock replacement for {exchangeItem?.name}. Direct exchanges are available only when the replacement has the same price.
+          </p>
+          {exchangeError && <p className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{exchangeError}</p>}
+          {exchangeVariants.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {exchangeVariants.map((variant) => (
+                <button
+                  key={variant.sku}
+                  type="button"
+                  onClick={() => { setExchangeSize(variant.size); setExchangeColor(variant.color); }}
+                  className={`rounded-xl border p-3 text-left text-xs ${
+                    exchangeSize === variant.size && exchangeColor === variant.color
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <span className="block font-bold">{variant.color || 'Default colour'} / {variant.size || 'One size'}</span>
+                  <span className="mt-1 block text-[10px] opacity-70">{variant.stock} available · {variant.sku}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-500">No replacement variants are currently available.</p>
+          )}
+          <textarea
+            required
+            minLength={5}
+            rows={3}
+            value={exchangeReason}
+            onChange={(event) => setExchangeReason(event.target.value)}
+            placeholder="Why do you need an exchange?"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={exchangeSubmitting || !exchangeVariants.length}
+            className="w-full rounded-xl bg-slate-900 py-3 text-xs font-bold uppercase tracking-wider text-white disabled:opacity-50"
+          >
+            {exchangeSubmitting ? 'Submitting...' : 'Submit Exchange Request'}
           </button>
         </form>
       </Modal>

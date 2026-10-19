@@ -2,13 +2,15 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { X, ShoppingBag, Plus, Minus, Trash2, ArrowRight } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { useCurrency } from '../../hooks/useCurrency';
 
 export const CartDrawer = () => {
   const { cart, cartDrawerOpen, setCartDrawerOpen, updateQuantity, removeItem, loading } = useCart();
+  const { formatMoney, commerce } = useCurrency();
 
   if (!cartDrawerOpen) return null;
 
-  const freeShippingThreshold = 150;
+  const freeShippingThreshold = Number(commerce.freeShippingThreshold ?? 150);
   const progressPercent = Math.min(100, ((cart.subtotal || 0) / freeShippingThreshold) * 100);
   const remainingForFreeShipping = Math.max(0, freeShippingThreshold - (cart.subtotal || 0));
 
@@ -45,7 +47,7 @@ export const CartDrawer = () => {
             <div className="flex justify-between text-xs font-medium text-amber-900 mb-1.5">
               <span>
                 {remainingForFreeShipping > 0
-                  ? `Add $${remainingForFreeShipping.toFixed(2)} more for Free Express Delivery`
+                  ? `Add ${formatMoney(remainingForFreeShipping)} more for Free Express Delivery`
                   : '🎉 Congratulations! You have unlocked Free Express Delivery'}
               </span>
             </div>
@@ -82,7 +84,7 @@ export const CartDrawer = () => {
                     {/* Garment Variant Badges */}
                     <div className="flex items-center space-x-2 mt-0.5 text-xs text-slate-500">
                       <span className="font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
-                        Size: {item.selectedSize || 'M'}
+                        Size: {item.selectedSize || 'Not specified'}
                       </span>
                       {item.selectedColor && (
                         <span className="text-[11px] text-slate-500 truncate max-w-[120px]">
@@ -92,7 +94,7 @@ export const CartDrawer = () => {
                     </div>
 
                     <p className="text-sm font-semibold text-slate-900 mt-1">
-                      ${item.unitPrice?.toFixed(2)}
+                      {formatMoney(item.unitPrice)}
                     </p>
 
                     <div className="flex items-center justify-between mt-3">
@@ -155,7 +157,7 @@ export const CartDrawer = () => {
             <div className="p-6 border-t border-slate-100 bg-slate-50/50 space-y-4">
               <div className="flex justify-between items-center text-base font-medium text-slate-900">
                 <span>Subtotal</span>
-                <span className="font-bold text-lg">${cart.subtotal?.toFixed(2)}</span>
+                <span className="font-bold text-lg">{formatMoney(cart.subtotal)}</span>
               </div>
               <p className="text-xs text-slate-500">Taxes and shipping calculated at checkout.</p>
 

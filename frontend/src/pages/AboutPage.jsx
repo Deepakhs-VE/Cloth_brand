@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ShieldCheck, Award, HeartHandshake, Sparkles } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 
 export const AboutPage = () => {
-  const { settings } = useSettings();
+  const { settings, refreshSettings } = useSettings();
   const brandName = settings?.brandName || 'AURA';
+  const about = settings?.aboutUs || {};
+
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   return (
     <div className="bg-[#fcfbfa] min-h-screen py-16">
@@ -12,13 +17,13 @@ export const AboutPage = () => {
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <p className="text-xs uppercase font-bold tracking-widest text-amber-600">
-            About Our Atelier
+            {about.subtitle || 'About Our Atelier'}
           </p>
           <h1 className="font-luxury text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            The Architecture of Elegance, The Purity of Natural Fibres
+            {about.title || 'The Architecture of Elegance, The Purity of Natural Fibres'}
           </h1>
           <p className="text-base text-slate-600 leading-relaxed">
-            {brandName} was founded with a singular conviction: that true luxury in apparel does not shout—it whispers through the weight of pure virgin cashmere, the fluid drape of Mulberry silk, and the silent precision of bespoke Italian tailoring.
+            {about.content || `${brandName} was founded with a singular conviction: true luxury is expressed through exceptional materials, thoughtful design, and precise tailoring.`}
           </p>
         </div>
 

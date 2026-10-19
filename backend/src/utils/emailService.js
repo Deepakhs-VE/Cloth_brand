@@ -1,5 +1,10 @@
 import nodemailer from 'nodemailer';
 
+const formatOrderMoney = (order, value) => new Intl.NumberFormat(order.locale || 'en-IE', {
+  style: 'currency',
+  currency: order.currency || 'EUR',
+}).format(Number(value || 0));
+
 class EmailService {
   constructor() {
     this.transporter = null;
@@ -94,7 +99,7 @@ class EmailService {
       .map(
         (item) => `<tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${item.name} (x${item.quantity})</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">$${item.total.toFixed(2)}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatOrderMoney(order, item.total)}</td>
         </tr>`
       )
       .join('');
@@ -116,14 +121,14 @@ class EmailService {
           <tfoot>
             <tr>
               <td style="padding: 8px; font-weight: bold;">Total:</td>
-              <td style="padding: 8px; font-weight: bold; text-align: right;">$${order.totalAmount.toFixed(2)}</td>
+              <td style="padding: 8px; font-weight: bold; text-align: right;">${formatOrderMoney(order, order.totalAmount)}</td>
             </tr>
           </tfoot>
         </table>
         <p>Shipping to: ${order.shippingAddress.streetAddress}, ${order.shippingAddress.city}, ${order.shippingAddress.postalCode}</p>
       </div>
     `;
-    const text = `Order #${order.orderNumber} Confirmed! Total: $${order.totalAmount.toFixed(2)}. Track in your account.`;
+    const text = `Order #${order.orderNumber} Confirmed! Total: ${formatOrderMoney(order, order.totalAmount)}. Track in your account.`;
     return this.sendMail({ to: user.email, subject, html, text });
   }
 
@@ -167,10 +172,28 @@ class EmailService {
         <p>Hello ${user.name}, your request for order <strong>#${order.orderNumber}</strong> is now <strong>${statusLabel}</strong>.</p>
         ${request.adminNote ? `<p>Store note: ${request.adminNote}</p>` : ''}
         ${request.type === 'RETURN' && request.status === 'APPROVED' ? '<p>Please follow the return instructions provided by our support team. Your refund will be issued after the parcel is received and inspected.</p>' : ''}
-        ${request.status === 'COMPLETED' ? `<p>A full refund of <strong>$${order.totalAmount.toFixed(2)}</strong> was sent to your original Stripe payment method. Bank processing time may vary.</p>` : ''}
+        ${request.status === 'COMPLETED' ? `<p>A full refund of <strong>${formatOrderMoney(order, order.totalAmount)}</strong> was sent to your original Stripe payment method. Bank processing time may vary.</p>` : ''}
       </div>
     `;
     const text = `${requestLabel} request for order #${order.orderNumber}: ${statusLabel}.${request.adminNote ? ` Store note: ${request.adminNote}` : ''}`;
+    return this.sendMail({ to: user.email, subject, html, text });
+  }
+
+  async sendItemReturnUpdateEmail(order, request, user) {
+    if (!request || !user?.email) return null;
+    const status = request.status.toLowerCase().replace(/_/g, ' ');
+    const type = request.type === 'RETURN' ? 'Return' : 'Cancellation';
+    const subject = `${type} ${status}: ${request.productName} - ${order.orderNumber}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #0f172a;">${type} request update</h2>
+        <p>Hello ${user.name}, your request for <strong>${request.productName}</strong> (quantity ${request.quantity}) is now <strong>${status}</strong>.</p>
+        <p>Refund amount: <strong>${formatOrderMoney(order, request.refundAmount)}</strong></p>
+        ${request.adminNote ? `<p>Store note: ${request.adminNote}</p>` : ''}
+        ${request.type === 'RETURN' && request.status === 'APPROVED' ? '<p>Please return the item using the instructions supplied by our support team. The refund is issued after receipt and inspection.</p>' : ''}
+      </div>
+    `;
+    const text = `${type} request for ${request.productName} on order ${order.orderNumber}: ${status}. Refund amount: ${formatOrderMoney(order, request.refundAmount)}.`;
     return this.sendMail({ to: user.email, subject, html, text });
   }
 }

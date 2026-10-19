@@ -52,7 +52,7 @@ export const ContactSection = () => {
 
             {whatsappNumber && (
               <a
-                href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hello, I would like assistance with AURA.')}`}
+                href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Hello, I would like assistance with ${settings?.brandName || 'your store'}.`)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="pressable inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs uppercase tracking-wider font-bold transition"
@@ -76,7 +76,7 @@ export const ContactSection = () => {
               </p>
             )}
 
-            <button disabled={submitting} className="pressable inline-flex items-center justify-center gap-2 w-full sm:w-auto px-7 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-widest font-bold transition disabled:opacity-60">
+            <button type="submit" disabled={submitting} className="pressable inline-flex items-center justify-center gap-2 w-full sm:w-auto px-7 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-widest font-bold transition disabled:opacity-60">
               <Send className="w-4 h-4" /> {submitting ? 'Sending...' : 'Send Message'}
             </button>
           </form>

@@ -1,6 +1,7 @@
 import { User } from '../models/User.js';
 import { Address } from '../models/Address.js';
 import { normalizePhoneNumber } from '../utils/phone.js';
+import { normalizeEuropeanCountry } from '../utils/countries.js';
 
 export const getProfile = async (req, res, next) => {
   try {
@@ -51,7 +52,8 @@ export const getAddresses = async (req, res, next) => {
 
 export const addAddress = async (req, res, next) => {
   try {
-    const { fullName, phone, streetAddress, apartment, city, state, postalCode, country, isDefault, addressType } = req.body;
+    const { fullName, phone, streetAddress, apartment, city, state, postalCode, country, countryCode, isDefault, addressType } = req.body;
+    const normalizedCountry = normalizeEuropeanCountry(countryCode, country);
 
     const count = await Address.countDocuments({ user: req.user._id });
     const shouldBeDefault = isDefault || count === 0;
@@ -69,7 +71,7 @@ export const addAddress = async (req, res, next) => {
       city,
       state,
       postalCode,
-      country: country || 'United States',
+      ...normalizedCountry,
       isDefault: shouldBeDefault,
       addressType: addressType || 'home',
     });
@@ -93,6 +95,9 @@ export const updateAddress = async (req, res, next) => {
     }
 
     const updates = { ...req.body };
+    if (updates.countryCode !== undefined || updates.country !== undefined) {
+      Object.assign(updates, normalizeEuropeanCountry(updates.countryCode || address.countryCode, updates.country || address.country));
+    }
     if (updates.phone !== undefined) {
       updates.phone = normalizePhoneNumber(updates.phone, {
         required: true,

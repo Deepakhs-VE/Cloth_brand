@@ -1,11 +1,34 @@
 import { Cart } from '../models/Cart.js';
 import { Product } from '../models/Product.js';
+import { SiteSettings } from '../models/SiteSettings.js';
+import { convertFromBase } from '../utils/exchangeRateService.js';
+
+const getSelectedVariant = (product, size = '', color = '') => {
+  if (!product.variants?.length) return null;
+  return product.variants.find(
+    (variant) =>
+      variant.isActive &&
+      variant.size === size &&
+      variant.color === color
+  ) || null;
+};
+
+const getSellingBasePrice = (product, variant = null) => {
+  const regularPrice = variant?.basePrice ?? variant?.price ?? product.basePrice ?? product.price;
+  if (variant?.baseDiscountPrice !== null && variant?.baseDiscountPrice !== undefined) {
+    return variant.baseDiscountPrice;
+  }
+  if (variant?.basePrice !== null && variant?.basePrice !== undefined) return regularPrice;
+  return product.baseDiscountPrice ?? product.discountPrice ?? regularPrice;
+};
 
 // Helper to format cart with fresh database prices and stock calculations
-export const populateAndFormatCart = async (cart) => {
+export const populateAndFormatCart = async (cart, suppliedSettings = null) => {
+  let settings = suppliedSettings || await SiteSettings.findOne();
+  if (!settings) settings = await SiteSettings.create({});
   await cart.populate({
     path: 'items.product',
-    select: 'name slug price discountPrice images stock isActive',
+    select: 'name slug price discountPrice basePrice baseDiscountPrice images stock isActive variants',
   });
 
   // Filter out any deleted or deactivated items if desired, but keep valid items
@@ -14,10 +37,14 @@ export const populateAndFormatCart = async (cart) => {
 
   for (const item of cart.items) {
     if (item.product && item.product.isActive) {
-      const activePrice =
-        item.product.discountPrice !== null && item.product.discountPrice !== undefined
-          ? item.product.discountPrice
-          : item.product.price;
+      const variant = getSelectedVariant(
+        item.product,
+        item.selectedSize || '',
+        item.selectedColor || ''
+      );
+      const usesVariants = item.product.variants?.length > 0;
+      const activePrice = await convertFromBase(getSellingBasePrice(item.product, variant), settings);
+      const availableStock = usesVariants ? variant?.stock || 0 : item.product.stock;
 
       const itemTotal = activePrice * item.quantity;
       subtotal += itemTotal;
@@ -28,15 +55,16 @@ export const populateAndFormatCart = async (cart) => {
           _id: item.product._id,
           name: item.product.name,
           slug: item.product.slug,
-          price: item.product.price,
-          discountPrice: item.product.discountPrice,
-          image: item.product.images[0] || '',
-          stock: item.product.stock,
-          isOutOfStock: item.product.stock < item.quantity,
+          price: await convertFromBase(item.product.basePrice ?? item.product.price, settings),
+          discountPrice: item.product.baseDiscountPrice === null || item.product.baseDiscountPrice === undefined ? null : await convertFromBase(item.product.baseDiscountPrice, settings),
+          image: variant?.images?.[0] || item.product.images[0] || '',
+          stock: availableStock,
+          isOutOfStock: availableStock < item.quantity,
         },
         quantity: item.quantity,
-        selectedSize: item.selectedSize || 'M',
+        selectedSize: item.selectedSize || '',
         selectedColor: item.selectedColor || '',
+        variantSku: variant?.sku || item.variantSku || '',
         unitPrice: activePrice,
         itemTotal,
       });
@@ -49,6 +77,7 @@ export const populateAndFormatCart = async (cart) => {
     items,
     itemCount: items.reduce((acc, curr) => acc + curr.quantity, 0),
     subtotal: Math.round(subtotal * 100) / 100,
+    currency: settings.commerce?.currencyCode || 'EUR',
   };
 };
 
@@ -69,7 +98,7 @@ export const getCart = async (req, res, next) => {
 
 export const addToCart = async (req, res, next) => {
   try {
-    const { productId, quantity = 1, selectedSize = 'M', selectedColor = '' } = req.body;
+    const { productId, quantity = 1, selectedSize = '', selectedColor = '' } = req.body;
 
     if (!productId) {
       return res.status(400).json({ success: false, message: 'Product ID is required' });
@@ -83,6 +112,31 @@ export const addToCart = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Product not found or unavailable' });
     }
 
+    const normalizedSize = String(selectedSize || '').trim();
+    const normalizedColor = String(selectedColor || '').trim();
+
+    const selectedVariant = getSelectedVariant(product, normalizedSize, normalizedColor);
+    if (product.variants?.length > 0 && !selectedVariant) {
+      return res.status(400).json({
+        success: false,
+        message: 'This size and colour combination is unavailable',
+      });
+    }
+
+    if (product.sizes?.length > 0 && !product.sizes.includes(normalizedSize)) {
+      return res.status(400).json({
+        success: false,
+        message: normalizedSize ? 'The selected size is unavailable' : 'Please select a size',
+      });
+    }
+
+    if (product.colors?.length > 0 && !product.colors.includes(normalizedColor)) {
+      return res.status(400).json({
+        success: false,
+        message: normalizedColor ? 'The selected colour is unavailable' : 'Please select a colour',
+      });
+    }
+
     let cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
       cart = new Cart({ user: req.user._id, items: [] });
@@ -92,19 +146,18 @@ export const addToCart = async (req, res, next) => {
     const existingItemIndex = cart.items.findIndex(
       (item) =>
         item.product.toString() === productId &&
-        (item.selectedSize || 'M') === selectedSize &&
-        (item.selectedColor || '') === selectedColor
+        (item.selectedSize || '') === normalizedSize &&
+        (item.selectedColor || '') === normalizedColor
     );
 
-    const totalProductQtyInCart = cart.items
-      .filter((item) => item.product.toString() === productId)
-      .reduce((sum, item) => sum + item.quantity, 0);
+    const existingVariantQty = existingItemIndex > -1 ? cart.items[existingItemIndex].quantity : 0;
+    const availableStock = selectedVariant ? selectedVariant.stock : product.stock;
 
     // 2. Validate against real stock
-    if (totalProductQtyInCart + qtyToAdd > product.stock) {
+    if (existingVariantQty + qtyToAdd > availableStock) {
       return res.status(400).json({
         success: false,
-        message: `Only ${product.stock} items available in stock. You already have ${totalProductQtyInCart} in your cart.`,
+        message: `Only ${availableStock} item(s) are available for this selected variant.`,
       });
     }
 
@@ -114,8 +167,9 @@ export const addToCart = async (req, res, next) => {
       cart.items.push({
         product: productId,
         quantity: qtyToAdd,
-        selectedSize: selectedSize || 'M',
-        selectedColor: selectedColor || '',
+        selectedSize: normalizedSize,
+        selectedColor: normalizedColor,
+        variantSku: selectedVariant?.sku || '',
       });
     }
 
@@ -157,10 +211,17 @@ export const updateCartItem = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Product is no longer available' });
     }
 
-    if (quantity > product.stock) {
+    const selectedVariant = getSelectedVariant(
+      product,
+      item.selectedSize || '',
+      item.selectedColor || ''
+    );
+    const availableStock = product.variants?.length > 0 ? selectedVariant?.stock || 0 : product.stock;
+
+    if (quantity > availableStock) {
       return res.status(400).json({
         success: false,
-        message: `Only ${product.stock} items available in stock`,
+        message: `Only ${availableStock} item(s) are available for this selected variant`,
       });
     }
 

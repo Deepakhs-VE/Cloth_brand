@@ -1,6 +1,8 @@
 import { User } from '../models/User.js';
 import { Product } from '../models/Product.js';
 import { Order } from '../models/Order.js';
+import { SiteSettings } from '../models/SiteSettings.js';
+import { convertCurrency } from '../utils/exchangeRateService.js';
 
 export const getDashboardStats = async (req, res, next) => {
   try {
@@ -15,12 +17,13 @@ export const getDashboardStats = async (req, res, next) => {
       totalUsers,
       totalProducts,
       totalOrders,
+      settings,
       revenueStats,
       pendingOrders,
       processingOrders,
       completedOrders,
       cancelledOrders,
-      lowStockProducts,
+      lowStockCatalog,
       recentOrders,
       recentUsers,
       monthlySalesDescending,
@@ -28,18 +31,25 @@ export const getDashboardStats = async (req, res, next) => {
       User.countDocuments({ role: 'customer' }),
       Product.countDocuments({ isActive: true }),
       Order.countDocuments(),
+      SiteSettings.findOne(),
       Order.aggregate([
         { $match: paidOrderFilter },
-        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } },
+        { $group: { _id: { $ifNull: ['$currency', 'EUR'] }, totalRevenue: { $sum: '$totalAmount' } } },
       ]),
       Order.countDocuments({ orderStatus: { $in: ['PENDING', 'CONFIRMED'] } }),
       Order.countDocuments({ orderStatus: { $in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] } }),
       Order.countDocuments({ orderStatus: 'DELIVERED' }),
       Order.countDocuments({ orderStatus: { $in: ['CANCELLED', 'REFUNDED'] } }),
-      Product.find({ isActive: true, stock: { $lte: 5 } })
-        .select('name sku stock price images')
+      Product.find({
+        isActive: true,
+        $or: [
+          { variants: { $elemMatch: { isActive: true, stock: { $lte: 5 } } } },
+          { 'variants.0': { $exists: false }, stock: { $lte: 5 } },
+        ],
+      })
+        .select('name sku stock price images variants')
         .sort({ stock: 1, name: 1 })
-        .limit(10)
+        .limit(30)
         .lean(),
       Order.find()
         .populate('user', 'name email')
@@ -57,18 +67,63 @@ export const getDashboardStats = async (req, res, next) => {
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          _id: {
+            month: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+            currency: { $ifNull: ['$currency', 'EUR'] },
+          },
           revenue: { $sum: '$totalAmount' },
           count: { $sum: 1 },
         },
       },
-      { $sort: { _id: -1 } },
-      { $limit: 6 },
+      { $sort: { '_id.month': -1 } },
+      { $limit: 24 },
       ]),
     ]);
 
-    const totalRevenue = revenueStats[0]?.totalRevenue || 0;
-    const salesByMonth = monthlySalesDescending.reverse();
+    const reportingCurrency = String(settings?.commerce?.currencyCode || 'EUR').toUpperCase();
+    const reportSettings = settings || await SiteSettings.create({});
+    const totalRevenue = (await Promise.all(revenueStats.map((entry) => convertCurrency(
+      entry.totalRevenue,
+      entry._id,
+      reportingCurrency,
+      reportSettings
+    )))).reduce((sum, value) => sum + value, 0);
+    const monthlyTotals = new Map();
+    for (const entry of monthlySalesDescending) {
+      const month = entry._id.month;
+      const convertedRevenue = await convertCurrency(entry.revenue, entry._id.currency, reportingCurrency, reportSettings);
+      const existing = monthlyTotals.get(month) || { _id: month, revenue: 0, count: 0 };
+      existing.revenue += convertedRevenue;
+      existing.count += entry.count;
+      monthlyTotals.set(month, existing);
+    }
+    const salesByMonth = [...monthlyTotals.values()].sort((a, b) => a._id.localeCompare(b._id));
+    const lowStockProducts = lowStockCatalog
+      .flatMap((product) => product.variants?.length
+        ? product.variants
+            .filter((variant) => variant.isActive && variant.stock <= 5)
+            .map((variant) => ({
+              _id: `${product._id}-${variant._id}`,
+              productId: product._id,
+              name: product.name,
+              sku: variant.sku,
+              stock: variant.stock,
+              size: variant.size,
+              color: variant.color,
+              image: variant.images?.[0] || product.images?.[0] || '',
+              isVariant: true,
+            }))
+        : [{
+            _id: product._id,
+            productId: product._id,
+            name: product.name,
+            sku: product.sku,
+            stock: product.stock,
+            image: product.images?.[0] || '',
+            isVariant: false,
+          }])
+      .sort((a, b) => a.stock - b.stock)
+      .slice(0, 15);
 
     res.status(200).json({
       success: true,
@@ -77,6 +132,7 @@ export const getDashboardStats = async (req, res, next) => {
         totalProducts,
         totalOrders,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
+        currency: reportingCurrency,
         pendingOrders,
         processingOrders,
         completedOrders,
@@ -86,6 +142,7 @@ export const getDashboardStats = async (req, res, next) => {
       recentOrders,
       recentUsers,
       salesByMonth,
+      currency: reportingCurrency,
     });
   } catch (error) {
     next(error);

@@ -22,12 +22,17 @@ export const ProductsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [loadError, setLoadError] = useState('');
 
   // Filters State
   const [selectedCategory, setSelectedCategory] = useState(categoryParam);
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
   const [inStockOnly, setInStockOnly] = useState(false);
   const [selectedRating, setSelectedRating] = useState('');
+  const [selectedSize, setSelectedSize] = useState('');
+  const [selectedFit, setSelectedFit] = useState('');
+  const [selectedFabric, setSelectedFabric] = useState('');
+  const [selectedAudience, setSelectedAudience] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
@@ -55,6 +60,7 @@ export const ProductsPage = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const params = new URLSearchParams();
 
       if (searchParam) params.append('search', searchParam);
@@ -63,6 +69,10 @@ export const ProductsPage = () => {
       if (priceRange.max) params.append('maxPrice', priceRange.max);
       if (inStockOnly) params.append('inStock', 'true');
       if (selectedRating) params.append('rating', selectedRating);
+      if (selectedSize) params.append('size', selectedSize);
+      if (selectedFit) params.append('fit', selectedFit);
+      if (selectedFabric) params.append('fabric', selectedFabric);
+      if (selectedAudience) params.append('audience', selectedAudience);
       if (isFeaturedParam) params.append('isFeatured', 'true');
       if (sortBy) params.append('sort', sortBy);
       params.append('page', page);
@@ -76,6 +86,7 @@ export const ProductsPage = () => {
       }
     } catch (err) {
       console.error('Error fetching products:', err);
+      setLoadError('We could not load the collection. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -83,13 +94,17 @@ export const ProductsPage = () => {
 
   useEffect(() => {
     fetchProducts();
-  }, [selectedCategory, searchParam, isFeaturedParam, priceRange, inStockOnly, selectedRating, sortBy, page]);
+  }, [selectedCategory, searchParam, isFeaturedParam, priceRange, inStockOnly, selectedRating, selectedSize, selectedFit, selectedFabric, selectedAudience, sortBy, page]);
 
   const handleClearFilters = () => {
     setSelectedCategory('');
     setPriceRange({ min: '', max: '' });
     setInStockOnly(false);
     setSelectedRating('');
+    setSelectedSize('');
+    setSelectedFit('');
+    setSelectedFabric('');
+    setSelectedAudience('');
     setSortBy('newest');
     setSearchParams({});
     setPage(1);
@@ -118,9 +133,9 @@ export const ProductsPage = () => {
                 ? categories.find((c) => c.slug === selectedCategory)?.name || 'Curated Collection'
                 : 'The Complete Collection'}
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
+            {/* <p className="text-xs text-slate-500 mt-1">
               Showing {products.length} of {totalCount} authentic pieces
-            </p>
+            </p> */}
           </div>
 
           {/* Sort & Mobile Filter Toggle */}
@@ -182,6 +197,14 @@ export const ProductsPage = () => {
                   setPage(1);
                 }}
                 onClearFilters={handleClearFilters}
+                selectedSize={selectedSize}
+                onSizeChange={(value) => { setSelectedSize(value); setPage(1); }}
+                selectedFit={selectedFit}
+                onFitChange={(value) => { setSelectedFit(value); setPage(1); }}
+                selectedFabric={selectedFabric}
+                onFabricChange={(value) => { setSelectedFabric(value); setPage(1); }}
+                selectedAudience={selectedAudience}
+                onAudienceChange={(value) => { setSelectedAudience(value); setPage(1); }}
               />
             </div>
           </div>
@@ -222,6 +245,14 @@ export const ProductsPage = () => {
                     setPage(1);
                   }}
                   onClearFilters={handleClearFilters}
+                  selectedSize={selectedSize}
+                  onSizeChange={(value) => { setSelectedSize(value); setPage(1); }}
+                  selectedFit={selectedFit}
+                  onFitChange={(value) => { setSelectedFit(value); setPage(1); }}
+                  selectedFabric={selectedFabric}
+                  onFabricChange={(value) => { setSelectedFabric(value); setPage(1); }}
+                  selectedAudience={selectedAudience}
+                  onAudienceChange={(value) => { setSelectedAudience(value); setPage(1); }}
                 />
               </div>
             </div>
@@ -235,6 +266,14 @@ export const ProductsPage = () => {
                   <div key={i} className="aspect-[4/5] bg-slate-100 rounded-2xl animate-pulse" />
                 ))}
               </div>
+            ) : loadError ? (
+              <EmptyState
+                icon={PackageOpen}
+                title="Collection unavailable"
+                description={loadError}
+                actionText="Try Again"
+                onAction={fetchProducts}
+              />
             ) : products.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

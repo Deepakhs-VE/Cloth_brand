@@ -22,6 +22,21 @@ const getPaymentIntentId = (session) =>
     ? session.payment_intent
     : session.payment_intent?.id || '';
 
+const restoreOrderItemStock = async (item) => {
+  const product = await Product.findById(item.product);
+  if (!product) return;
+  if (product.variants?.length) {
+    const variant = product.variants.find((entry) =>
+      item.variantSku
+        ? entry.sku === item.variantSku
+        : entry.size === (item.selectedSize || '') && entry.color === (item.selectedColor || '')
+    );
+    if (variant) variant.stock += item.quantity;
+  }
+  product.stock += item.quantity;
+  await product.save();
+};
+
 const fulfillStripeOrder = async (session) => {
   if (session.payment_status !== 'paid') return null;
 
@@ -39,7 +54,7 @@ const fulfillStripeOrder = async (session) => {
       $set: {
         user: order.user,
         amount: order.totalAmount,
-        currency: (session.currency || 'usd').toUpperCase(),
+        currency: (session.currency || 'eur').toUpperCase(),
         provider: 'stripe',
         transactionId: session.id,
         stripeSessionId: session.id,
@@ -110,11 +125,7 @@ const expireUnpaidOrder = async (session) => {
 
   if (!order) return;
 
-  await Promise.all(
-    order.orderItems.map((item) =>
-      Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } })
-    )
-  );
+  await Promise.all(order.orderItems.map(restoreOrderItemStock));
 
   if (order.couponCode) {
     const coupon = await Coupon.findOne({ code: order.couponCode });
@@ -196,11 +207,7 @@ const finalizeSuccessfulRefund = async (payment, stripeRefund) => {
   );
 
   if (order) {
-    await Promise.all(
-      order.orderItems.map((item) =>
-        Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } })
-      )
-    );
+    await Promise.all(order.orderItems.map(restoreOrderItemStock));
     await restoreCouponUsage(order);
     await order.populate('user', 'name email');
     emailService.sendRefundUpdateEmail(order, order.user).catch((error) =>
@@ -209,6 +216,51 @@ const finalizeSuccessfulRefund = async (payment, stripeRefund) => {
   }
 
   return order || Order.findById(payment.order);
+};
+
+const finalizeSuccessfulItemRefund = async (payment, stripeRefund, requestId) => {
+  if (payment.refunds.some((entry) => entry.refundId === stripeRefund.id)) {
+    return Order.findById(payment.order);
+  }
+  const order = await Order.findById(payment.order);
+  const request = order?.itemReturnRequests?.id(requestId);
+  if (!order || !request) return order;
+
+  const amount = stripeRefund.amount / 100;
+  payment.refunds.push({
+    refundId: stripeRefund.id,
+    amount,
+    reason: request.reason,
+    status: stripeRefund.status,
+    itemReturnRequestId: request._id,
+    refundedAt: new Date(),
+  });
+  const cumulativeRefund = payment.refunds.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  payment.paymentStatus = cumulativeRefund >= payment.amount - 0.009 ? 'REFUNDED' : 'SUCCESS';
+  await payment.save();
+
+  request.status = 'COMPLETED';
+  request.completedAt = new Date();
+  request.stripeRefundId = stripeRefund.id;
+  order.refundedAmount = Math.min(order.totalAmount, Number(order.refundedAmount || 0) + amount);
+  order.paymentStatus = order.refundedAmount >= order.totalAmount - 0.009 ? 'REFUNDED' : 'PAID';
+  const allUnitsRemoved = order.orderItems.every(
+    (item) => Number(item.cancelledQuantity || 0) + Number(item.returnedQuantity || 0) >= item.quantity
+  );
+  if (allUnitsRemoved && order.orderStatus !== 'DELIVERED') {
+    order.orderStatus = 'CANCELLED';
+    order.cancelledAt = order.cancelledAt || new Date();
+  }
+  order.statusHistory.push({
+    status: order.orderStatus,
+    note: `Partial Stripe refund ${stripeRefund.id} completed for ${request.productName}`,
+  });
+  await order.save();
+  await order.populate('user', 'name email');
+  emailService.sendItemReturnUpdateEmail(order, request, order.user).catch((error) =>
+    console.error('Item refund completion email error:', error)
+  );
+  return order;
 };
 
 const markRefundPending = async (payment, order, stripeRefund, reason) => {
@@ -257,12 +309,15 @@ export const createCheckoutSession = async (req, res, next) => {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      // Checkout uses Stripe Dashboard payment-method settings. These local
+      // bank methods must never be offered for this storefront.
+      excluded_payment_method_types: ['bancontact', 'eps'],
       customer_email: req.user.email,
       client_reference_id: order._id.toString(),
       line_items: [
         {
           price_data: {
-            currency: 'usd',
+            currency: String(order.currency || 'EUR').toLowerCase(),
             product_data: {
               name: `AURA order ${order.orderNumber}`,
               description: `${itemCount} item${itemCount === 1 ? '' : 's'}, including shipping and tax`,
@@ -287,7 +342,7 @@ export const createCheckoutSession = async (req, res, next) => {
         $set: {
           user: req.user._id,
           amount: order.totalAmount,
-          currency: 'USD',
+          currency: String(order.currency || 'EUR').toUpperCase(),
           provider: 'stripe',
           transactionId: session.id,
           stripeSessionId: session.id,
@@ -413,7 +468,9 @@ export const stripeWebhook = async (req, res) => {
         : null;
 
       if (payment && stripeRefund.status === 'succeeded') {
-        await finalizeSuccessfulRefund(payment, stripeRefund);
+        const itemRequestId = stripeRefund.metadata?.itemReturnRequestId;
+        if (itemRequestId) await finalizeSuccessfulItemRefund(payment, stripeRefund, itemRequestId);
+        else await finalizeSuccessfulRefund(payment, stripeRefund);
       } else if (payment && ['failed', 'canceled'].includes(stripeRefund.status)) {
         payment.paymentStatus = 'SUCCESS';
         payment.refundInfo = {
@@ -426,7 +483,12 @@ export const stripeWebhook = async (req, res) => {
         const order = await Order.findById(payment.order);
         if (order) {
           order.paymentStatus = 'PAID';
-          if (order.refundRequest) {
+          const itemRequestId = stripeRefund.metadata?.itemReturnRequestId;
+          const itemRequest = itemRequestId ? order.itemReturnRequests?.id(itemRequestId) : null;
+          if (itemRequest) {
+            itemRequest.status = itemRequest.type === 'RETURN' ? 'RECEIVED' : 'APPROVED';
+            itemRequest.adminNote = `Stripe refund ${stripeRefund.status}. Please review and retry.`;
+          } else if (order.refundRequest) {
             order.refundRequest.status = order.refundRequest.type === 'RETURN' ? 'RECEIVED' : 'APPROVED';
             order.refundRequest.adminNote = `Stripe refund ${stripeRefund.status}. Please review and retry.`;
           }
@@ -444,7 +506,7 @@ export const stripeWebhook = async (req, res) => {
 
 export const refundPayment = async (req, res, next) => {
   try {
-    const { paymentId, orderId, reason } = req.body;
+    const { paymentId, orderId, reason, itemReturnRequestId } = req.body;
     const payment = paymentId
       ? await Payment.findById(paymentId)
       : await Payment.findOne({ order: orderId });
@@ -458,59 +520,73 @@ export const refundPayment = async (req, res, next) => {
     }
 
     const order = await Order.findById(payment.order);
-    if (!order?.refundRequest) {
+    const itemRequest = itemReturnRequestId ? order?.itemReturnRequests?.id(itemReturnRequestId) : null;
+    if (!order?.refundRequest && !itemRequest) {
       return res.status(400).json({
         success: false,
         message: 'A customer cancellation or return request is required before refunding',
       });
     }
 
+    const activeRequest = itemRequest || order.refundRequest;
     const requestReady =
-      (order.refundRequest.type === 'CANCELLATION' && order.refundRequest.status === 'APPROVED') ||
-      (order.refundRequest.type === 'RETURN' && order.refundRequest.status === 'RECEIVED');
+      (activeRequest.type === 'CANCELLATION' && activeRequest.status === 'APPROVED') ||
+      (activeRequest.type === 'RETURN' && activeRequest.status === 'RECEIVED');
     if (!requestReady) {
       return res.status(409).json({
         success: false,
-        message: order.refundRequest.type === 'RETURN'
+        message: activeRequest.type === 'RETURN'
           ? 'Approve the return and mark the parcel as received before refunding'
           : 'Approve the cancellation request before refunding',
       });
     }
 
-    const refundReason = reason || order.refundRequest.reason || 'Customer requested refund';
+    const refundReason = reason || activeRequest.reason || 'Customer requested refund';
+    const refundAmount = itemRequest ? itemRequest.refundAmount : payment.amount;
     const stripeRefund = await getStripe().refunds.create(
       {
         payment_intent: payment.stripePaymentIntentId,
-        amount: Math.round(payment.amount * 100),
+        amount: Math.round(refundAmount * 100),
         reason: 'requested_by_customer',
         metadata: {
           orderId: order._id.toString(),
           orderNumber: order.orderNumber,
           internalReason: refundReason.slice(0, 500),
+          ...(itemRequest ? { itemReturnRequestId: itemRequest._id.toString() } : {}),
         },
       },
-      { idempotencyKey: `order-refund-${order._id}-${order.refundRequest._id}` }
+      { idempotencyKey: itemRequest
+        ? `item-refund-${order._id}-${itemRequest._id}`
+        : `order-refund-${order._id}-${order.refundRequest._id}` }
     );
 
     payment.refundInfo = {
       refundId: stripeRefund.id,
-      amount: payment.amount,
+      amount: refundAmount,
       reason: refundReason,
       status: stripeRefund.status,
     };
 
     let updatedOrder;
     if (stripeRefund.status === 'succeeded') {
-      updatedOrder = await finalizeSuccessfulRefund(payment, stripeRefund);
+      updatedOrder = itemRequest
+        ? await finalizeSuccessfulItemRefund(payment, stripeRefund, itemRequest._id)
+        : await finalizeSuccessfulRefund(payment, stripeRefund);
     } else {
-      await markRefundPending(payment, order, stripeRefund, refundReason);
+      if (itemRequest) {
+        itemRequest.status = 'REFUND_PENDING';
+        itemRequest.stripeRefundId = stripeRefund.id;
+        await order.save();
+      } else {
+        await markRefundPending(payment, order, stripeRefund, refundReason);
+      }
       updatedOrder = order;
     }
 
     res.status(200).json({
       success: true,
       message: stripeRefund.status === 'succeeded'
-        ? 'Stripe payment refunded in full'
+        ? itemRequest ? 'Stripe item refund completed' : 'Stripe payment refunded in full'
         : `Stripe refund is ${stripeRefund.status}`,
       payment,
       order: updatedOrder,

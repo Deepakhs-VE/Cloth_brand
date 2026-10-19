@@ -14,11 +14,13 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { OrderStatusBadge } from '../components/common/Badge';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const AccountDashboardPage = () => {
   const { user, logout, isAdmin } = useAuth();
   const { wishlist } = useWishlist();
   const navigate = useNavigate();
+  const { formatMoney } = useCurrency();
 
   const [orders, setOrders] = useState([]);
   const [addressCount, setAddressCount] = useState(0);
@@ -201,7 +203,7 @@ export const AccountDashboardPage = () => {
                         {o.orderItems.length} {o.orderItems.length === 1 ? 'item' : 'items'}
                       </td>
                       <td className="py-4 font-bold text-slate-900 text-right">
-                        ${o.totalAmount.toFixed(2)}
+                        {formatMoney(o.totalAmount, o.currency)}
                       </td>
                       <td className="py-4 text-right">
                         <Link

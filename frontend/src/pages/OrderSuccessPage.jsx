@@ -3,11 +3,13 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Package, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { useCart } from '../context/CartContext';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const OrderSuccessPage = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const { fetchCart } = useCart();
+  const { formatMoney } = useCurrency();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -109,7 +111,7 @@ export const OrderSuccessPage = () => {
               <div className="flex justify-between items-center pt-1">
                 <span className="text-sm font-bold text-slate-900">Total Charged</span>
                 <span className="font-luxury text-lg font-extrabold text-slate-900">
-                  ${order.totalAmount?.toFixed(2)}
+                  {formatMoney(order.totalAmount || 0, order.currency)}
                 </span>
               </div>
             </div>

@@ -9,13 +9,8 @@ export const AboutPreviewSection = () => {
   const about = settings?.aboutUs || {
     title: 'The Architecture of Elegance, The Purity of Natural Fibres',
     subtitle: 'Atelier Philosophy',
-    content: 'Founded on the principle that luxury apparel should be deliberate, effortless, and generational. AURA ATELIER partners directly with master heritage mills in Biella, Naples, and Lyon to craft virgin cashmere, Italian Fresco wool, and fluid Mulberry silk silhouettes designed to endure across decades.',
-    stats: [
-      { label: 'Active Patrons', value: '45K+' },
-      { label: 'Natural Fibre Purity', value: '100%' },
-      { label: 'Client Satisfaction', value: '99.5%' },
-      { label: 'Countries Shipped', value: '68' },
-    ],
+    content: 'We create considered clothing with an emphasis on enduring design, thoughtful materials, and dependable client care.',
+    stats: [],
     imageUrl: '/image-placeholder.svg',
   };
 
@@ -31,6 +26,11 @@ export const AboutPreviewSection = () => {
                 alt="Brand Philosophy"
                 className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.025]"
                 loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = '/image-placeholder.svg';
+                }}
               />
             </div>
             {/* Small accent floating box */}
@@ -58,16 +58,18 @@ export const AboutPreviewSection = () => {
             </p>
 
             {/* Statistics grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pt-4 border-t border-slate-100">
-              {about.stats?.map((stat, idx) => (
-                <div key={idx}>
-                  <p className="font-luxury text-2xl sm:text-3xl font-extrabold text-slate-900">
-                    {stat.value}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">{stat.label}</p>
-                </div>
-              ))}
-            </div>
+            {about.stats?.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pt-4 border-t border-slate-100">
+                {about.stats.map((stat, idx) => (
+                  <div key={`${stat.label}-${idx}`}>
+                    <p className="font-luxury text-2xl sm:text-3xl font-extrabold text-slate-900">
+                      {stat.value}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="pt-4">
               <Link

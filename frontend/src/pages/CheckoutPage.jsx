@@ -14,12 +14,16 @@ import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/common/Modal';
 import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
 import { useApplicationAlert } from '../context/ApplicationAlertContext';
+import { useCurrency } from '../hooks/useCurrency';
+import { SelectDropdown } from '../components/common/SelectDropdown';
+import { europeanCountryOptions, getEuropeanCountry } from '../utils/europeanCountries';
 
 export const CheckoutPage = () => {
   const { showAlert } = useApplicationAlert();
   const [searchParams, setSearchParams] = useSearchParams();
   const { cart, fetchCart } = useCart();
   const { user } = useAuth();
+  const { formatMoney, commerce } = useCurrency();
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
@@ -38,7 +42,8 @@ export const CheckoutPage = () => {
     city: '',
     state: '',
     postalCode: '',
-    country: 'United States',
+    country: '',
+    countryCode: '',
     isDefault: true,
   });
 
@@ -142,9 +147,21 @@ export const CheckoutPage = () => {
   // Calculations
   const subtotal = cart.subtotal || 0;
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
-  const shippingAmount = subtotal >= 150 ? 0 : 15.0;
-  const taxAmount = Math.round((subtotal - discountAmount) * 0.05 * 100) / 100;
-  const totalAmount = Math.max(0, subtotal - discountAmount + shippingAmount + taxAmount);
+  const shippingAmount = subtotal >= Number(commerce.freeShippingThreshold ?? 150)
+    ? 0
+    : Number(commerce.standardShippingAmount ?? 15);
+  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+  const selectedAddress = addresses.find((address) => address._id === selectedAddressId);
+  const destinationVat = (commerce.countryVatRates || []).find(
+    (entry) => entry.countryCode === selectedAddress?.countryCode
+  );
+  const vatRate = Number(destinationVat?.rate ?? commerce.defaultVatRate ?? 20);
+  const pricesIncludeVat = commerce.pricesIncludeVat !== false;
+  const taxableAmount = discountedSubtotal + shippingAmount;
+  const taxAmount = pricesIncludeVat
+    ? Math.round((taxableAmount - taxableAmount / (1 + vatRate / 100)) * 100) / 100
+    : Math.round(taxableAmount * (vatRate / 100) * 100) / 100;
+  const totalAmount = discountedSubtotal + shippingAmount + (pricesIncludeVat ? 0 : taxAmount);
 
   // Submit Order
   const handlePlaceOrder = async () => {
@@ -174,6 +191,7 @@ export const CheckoutPage = () => {
           state: addressObj.state,
           postalCode: addressObj.postalCode,
           country: addressObj.country,
+          countryCode: addressObj.countryCode,
         },
         paymentMethod: 'stripe',
         couponCode: appliedCoupon ? appliedCoupon.code : null,
@@ -334,11 +352,11 @@ export const CheckoutPage = () => {
                     <div>
                       <p className="font-semibold text-slate-900 line-clamp-1">{item.product?.name}</p>
                       <p className="text-[11px] text-slate-500">
-                        Size: <span className="font-semibold text-slate-700">{item.selectedSize || 'M'}</span>
+                        Size: <span className="font-semibold text-slate-700">{item.selectedSize || 'Not specified'}</span>
                         {item.selectedColor ? ` • ${item.selectedColor}` : ''} • Qty: {item.quantity}
                       </p>
                     </div>
-                    <span className="font-bold text-slate-900">${item.itemTotal?.toFixed(2)}</span>
+                    <span className="font-bold text-slate-900">{formatMoney(item.itemTotal)}</span>
                   </div>
                 ))}
               </div>
@@ -351,7 +369,7 @@ export const CheckoutPage = () => {
                       <Tag className="w-4 h-4 text-emerald-600" />
                       <div>
                         <span className="font-mono font-bold">{appliedCoupon.code}</span>
-                        <p className="text-[10px] text-emerald-600">-${appliedCoupon.discountAmount.toFixed(2)} applied</p>
+                        <p className="text-[10px] text-emerald-600">-{formatMoney(appliedCoupon.discountAmount)} applied</p>
                       </div>
                     </div>
                     <button
@@ -390,28 +408,28 @@ export const CheckoutPage = () => {
               <div className="space-y-2.5 text-xs text-slate-600 pt-2 border-t border-slate-100">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span className="font-semibold text-slate-900">${subtotal.toFixed(2)}</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(subtotal)}</span>
                 </div>
                 {appliedCoupon && (
                   <div className="flex justify-between text-emerald-600 font-semibold">
                     <span>Discount</span>
-                    <span>-${discountAmount.toFixed(2)}</span>
+                    <span>-{formatMoney(discountAmount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span>Courier Shipping</span>
                   <span className="font-semibold text-slate-900">
-                    {shippingAmount === 0 ? 'FREE' : `$${shippingAmount.toFixed(2)}`}
+                    {shippingAmount === 0 ? 'FREE' : formatMoney(shippingAmount)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Estimated Tax (5%)</span>
-                  <span className="font-semibold text-slate-900">${taxAmount.toFixed(2)}</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(taxAmount)}{pricesIncludeVat ? ' included' : ''}</span>
                 </div>
                 <div className="pt-3 border-t border-slate-100 flex justify-between items-baseline">
                   <span className="text-sm font-bold text-slate-900">Total Due</span>
                   <span className="font-luxury text-2xl font-extrabold text-slate-900">
-                    ${totalAmount.toFixed(2)}
+                    {formatMoney(totalAmount)}
                   </span>
                 </div>
               </div>
@@ -529,6 +547,20 @@ export const CheckoutPage = () => {
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">Delivery Country *</label>
+            <SelectDropdown
+              value={newAddress.countryCode}
+              onChange={(countryCode) => {
+                const country = getEuropeanCountry(countryCode);
+                setNewAddress({ ...newAddress, countryCode, country: country?.name || '' });
+              }}
+              options={[{ value: '', label: 'Select a European country' }, ...europeanCountryOptions]}
+              ariaLabel="Delivery country"
+              required
+            />
           </div>
 
           <button

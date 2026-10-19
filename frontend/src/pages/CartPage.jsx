@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, ShieldCheck, Truck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { EmptyState } from '../components/common/EmptyState';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const CartPage = () => {
   const { cart, updateQuantity, removeItem, clearCart, loading } = useCart();
+  const { formatMoney, commerce } = useCurrency();
 
-  const freeShippingThreshold = 150;
+  const freeShippingThreshold = Number(commerce.freeShippingThreshold ?? 150);
+  const shippingAmount = (cart.subtotal || 0) >= freeShippingThreshold ? 0 : Number(commerce.standardShippingAmount ?? 15);
   const progressPercent = Math.min(100, ((cart.subtotal || 0) / freeShippingThreshold) * 100);
   const remainingForFree = Math.max(0, freeShippingThreshold - (cart.subtotal || 0));
 
@@ -45,7 +48,7 @@ export const CartPage = () => {
           <div className="flex items-center justify-between text-xs font-semibold text-amber-900 mb-2">
             <span>
               {remainingForFree > 0
-                ? `Add $${remainingForFree.toFixed(2)} more to qualify for Free Global Express Courier`
+                ? `Add ${formatMoney(remainingForFree)} more to qualify for Free Global Express Courier`
                 : '🎉 Complimentary Global Express Delivery Qualified!'}
             </span>
             <span>{Math.round(progressPercent)}%</span>
@@ -81,7 +84,7 @@ export const CartPage = () => {
                     </Link>
                     <div className="flex items-center space-x-2 mt-1">
                       <span className="text-[11px] font-semibold bg-slate-100 text-slate-800 px-2 py-0.5 rounded">
-                        Size: {item.selectedSize || 'M'}
+                        Size: {item.selectedSize || 'Not specified'}
                       </span>
                       {item.selectedColor && (
                         <span className="text-[11px] text-slate-500">
@@ -90,7 +93,7 @@ export const CartPage = () => {
                       )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
-                      Unit Price: ${item.unitPrice?.toFixed(2)}
+                      Unit Price: {formatMoney(item.unitPrice)}
                     </p>
                     {item.product?.stock <= 5 && (
                       <p className="text-[11px] text-orange-600 font-semibold mt-1">
@@ -129,7 +132,7 @@ export const CartPage = () => {
                   {/* Item Total */}
                   <div className="text-right">
                     <p className="text-base font-extrabold text-slate-900">
-                      ${item.itemTotal?.toFixed(2)}
+                      {formatMoney(item.itemTotal)}
                     </p>
                   </div>
 
@@ -156,12 +159,12 @@ export const CartPage = () => {
               <div className="space-y-3 text-xs text-slate-600">
                 <div className="flex justify-between">
                   <span>Bag Subtotal</span>
-                  <span className="font-semibold text-slate-900">${cart.subtotal?.toFixed(2)}</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(cart.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Estimated Courier Shipping</span>
                   <span className="font-semibold text-slate-900">
-                    {cart.subtotal >= 150 ? 'FREE' : '$15.00'}
+                    {shippingAmount === 0 ? 'FREE' : formatMoney(shippingAmount)}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -173,7 +176,7 @@ export const CartPage = () => {
               <div className="pt-4 border-t border-slate-100 flex justify-between items-baseline">
                 <span className="text-sm font-bold text-slate-900">Estimated Total</span>
                 <span className="font-luxury text-2xl font-extrabold text-slate-900">
-                  ${(cart.subtotal + (cart.subtotal >= 150 ? 0 : 15)).toFixed(2)}
+                  {formatMoney((cart.subtotal || 0) + shippingAmount)}
                 </span>
               </div>
 

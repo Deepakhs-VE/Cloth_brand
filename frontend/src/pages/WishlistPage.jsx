@@ -4,9 +4,11 @@ import { Heart, ShoppingBag, Trash2, ArrowRight } from 'lucide-react';
 import { useWishlist } from '../context/WishlistContext';
 import { EmptyState } from '../components/common/EmptyState';
 import { getProductPath } from '../utils/productPath';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const WishlistPage = () => {
   const { wishlist, removeFromWishlist, moveToCart, loading } = useWishlist();
+  const { formatMoney } = useCurrency();
 
   if (wishlist.length === 0) {
     return (
@@ -30,7 +32,7 @@ export const WishlistPage = () => {
             Saved Creations ({wishlist.length})
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Personal private selection of timepieces, leather goods, and acoustics
+            Your private selection of saved pieces from the collection
           </p>
         </div>
 
@@ -72,11 +74,11 @@ export const WishlistPage = () => {
                     </h3>
                     <div className="flex items-baseline space-x-2 mb-4">
                       <span className="font-extrabold text-base text-slate-900">
-                        ${activePrice.toFixed(2)}
+                        {formatMoney(activePrice)}
                       </span>
                       {hasDiscount && (
                         <span className="text-xs text-slate-400 line-through">
-                          ${product.price.toFixed(2)}
+                          {formatMoney(product.price)}
                         </span>
                       )}
                     </div>

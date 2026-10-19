@@ -35,9 +35,9 @@ api.interceptors.response.use(
       originalRequest?.method?.toLowerCase() === 'get' &&
       (!error.response || retryableStatuses.includes(error.response.status));
 
-    if (isRetryableGet && (originalRequest._transientRetryCount || 0) < 2) {
+    if (isRetryableGet && (originalRequest._transientRetryCount || 0) < 4) {
       originalRequest._transientRetryCount = (originalRequest._transientRetryCount || 0) + 1;
-      const delay = originalRequest._transientRetryCount * 500;
+      const delay = originalRequest._transientRetryCount * 750;
       await new Promise((resolve) => setTimeout(resolve, delay));
       return api(originalRequest);
     }

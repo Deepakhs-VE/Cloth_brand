@@ -14,6 +14,7 @@ export const RegisterPage = () => {
     password: '',
     confirmPassword: '',
     phone: '',
+    acceptedLegalTerms: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -45,7 +46,8 @@ export const RegisterPage = () => {
         formData.email,
         formData.password,
         formData.confirmPassword,
-        formData.phone
+        formData.phone,
+        formData.acceptedLegalTerms
       );
       navigate('/');
     } catch (err) {
@@ -180,9 +182,22 @@ export const RegisterPage = () => {
             )}
           </div>
 
+          <label className="flex items-start gap-2.5 text-xs leading-5 text-slate-600">
+            <input
+              type="checkbox"
+              required
+              checked={formData.acceptedLegalTerms}
+              onChange={(event) => setFormData({ ...formData, acceptedLegalTerms: event.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+            />
+            <span>
+              I agree to the <Link to="/policies?tab=terms" target="_blank" className="font-semibold text-slate-900 underline">Terms & Conditions</Link> and acknowledge the <Link to="/policies?tab=privacy" target="_blank" className="font-semibold text-slate-900 underline">Privacy Policy</Link>.
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={loading || !passwordsMatch}
+            disabled={loading || !passwordsMatch || !formData.acceptedLegalTerms}
             className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs uppercase tracking-widest font-bold rounded-xl transition shadow-md flex items-center justify-center space-x-2 disabled:opacity-50"
           >
             <span>{loading ? 'Creating Account...' : 'Complete Registration'}</span>

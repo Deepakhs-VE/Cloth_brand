@@ -1,12 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import { Tag, Plus, Edit2, Trash2, Calendar, CheckCircle } from 'lucide-react';
+import { Tag, Plus, Edit2, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
 import { SelectDropdown } from '../../components/common/SelectDropdown';
 import { useApplicationAlert } from '../../context/ApplicationAlertContext';
+import { useCurrency } from '../../hooks/useCurrency';
+
+const formatLocalDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultExpiryDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  return formatLocalDate(date);
+};
+
+const getCouponStatus = (coupon) => {
+  const status = coupon.availabilityStatus || (
+    !coupon.isActive
+      ? 'disabled'
+      : new Date(coupon.endDate) < new Date()
+      ? 'expired'
+      : coupon.usageLimit != null && (coupon.usageCount || 0) >= coupon.usageLimit
+      ? 'exhausted'
+      : 'available'
+  );
+
+  const statusStyles = {
+    available: { label: 'Visible to customers', className: 'bg-emerald-50 text-emerald-700' },
+    scheduled: { label: 'Scheduled', className: 'bg-blue-50 text-blue-700' },
+    expired: { label: 'Expired · hidden', className: 'bg-rose-50 text-rose-700' },
+    exhausted: { label: 'Limit reached · hidden', className: 'bg-amber-50 text-amber-700' },
+    disabled: { label: 'Disabled · hidden', className: 'bg-slate-100 text-slate-500' },
+  };
+
+  return statusStyles[status] || statusStyles.disabled;
+};
 
 export const AdminCouponsPage = () => {
+  const { formatMoney, symbol } = useCurrency();
   const { showAlert, showConfirm } = useApplicationAlert();
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,12 +56,17 @@ export const AdminCouponsPage = () => {
     discountValue: '',
     minOrderAmount: 0,
     maxDiscountAmount: '',
-    endDate: '2026-12-31',
+    endDate: getDefaultExpiryDate(),
     usageLimit: 500,
     perUserLimit: 1,
     isActive: true,
     description: '',
   });
+
+  const notifyStorefront = () => {
+    localStorage.setItem('aura_coupons_updated_at', String(Date.now()));
+    window.dispatchEvent(new Event('aura:coupons-updated'));
+  };
 
   const loadCoupons = async () => {
     try {
@@ -52,7 +94,7 @@ export const AdminCouponsPage = () => {
       discountValue: '',
       minOrderAmount: 50,
       maxDiscountAmount: '',
-      endDate: '2026-12-31',
+      endDate: getDefaultExpiryDate(),
       usageLimit: 500,
       perUserLimit: 1,
       isActive: true,
@@ -69,7 +111,7 @@ export const AdminCouponsPage = () => {
       discountValue: c.discountValue,
       minOrderAmount: c.minOrderAmount || 0,
       maxDiscountAmount: c.maxDiscountAmount || '',
-      endDate: c.endDate?.slice(0, 10) || '2026-12-31',
+      endDate: c.endDate?.slice(0, 10) || getDefaultExpiryDate(),
       usageLimit: c.usageLimit || '',
       perUserLimit: c.perUserLimit || 1,
       isActive: c.isActive,
@@ -97,6 +139,7 @@ export const AdminCouponsPage = () => {
       }
 
       await loadCoupons();
+      notifyStorefront();
       setModalOpen(false);
     } catch (err) {
       showAlert(err.response?.data?.message || 'Error saving coupon');
@@ -112,6 +155,7 @@ export const AdminCouponsPage = () => {
       try {
         await api.delete(`/coupons/${id}`);
         await loadCoupons();
+        notifyStorefront();
       } catch (err) {
         showAlert(err.response?.data?.message || 'Error deleting coupon');
       }
@@ -123,7 +167,7 @@ export const AdminCouponsPage = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <p className="text-xs text-slate-500 font-medium">
-            Configure promotional discount codes with thresholds, per-user limits, and expiry dates
+            Only coupons marked “Visible to customers” appear in the storefront Offers page.
           </p>
           <button
             onClick={handleOpenAdd}
@@ -135,7 +179,9 @@ export const AdminCouponsPage = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {coupons.map((c) => (
+          {coupons.map((c) => {
+            const status = getCouponStatus(c);
+            return (
             <div
               key={c._id}
               className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between hover:border-slate-300 transition"
@@ -146,16 +192,14 @@ export const AdminCouponsPage = () => {
                     {c.code}
                   </span>
                   <span
-                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                      c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                    }`}
+                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${status.className}`}
                   >
-                    {c.isActive ? 'Active' : 'Disabled'}
+                    {status.label}
                   </span>
                 </div>
 
                 <p className="font-luxury text-xl font-bold text-slate-900 mt-2">
-                  {c.discountType === 'percentage' ? `${c.discountValue}% OFF` : `$${c.discountValue} OFF`}
+                  {c.discountType === 'percentage' ? `${c.discountValue}% OFF` : `${formatMoney(c.discountValue)} OFF`}
                 </p>
 
                 <p className="text-xs text-slate-600 mt-2 line-clamp-2">
@@ -163,7 +207,7 @@ export const AdminCouponsPage = () => {
                 </p>
 
                 <div className="text-[11px] text-slate-400 mt-4 space-y-1">
-                  <p>• Min Order: ${c.minOrderAmount}</p>
+                  <p>• Min Order: {formatMoney(c.minOrderAmount)}</p>
                   <p>• Redemptions: {c.usageCount} used {c.usageLimit ? `/ max ${c.usageLimit}` : ''}</p>
                   <p>• Expires: {new Date(c.endDate).toLocaleDateString()}</p>
                 </div>
@@ -186,7 +230,8 @@ export const AdminCouponsPage = () => {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -221,7 +266,7 @@ export const AdminCouponsPage = () => {
                 onChange={(discountType) => setFormData({ ...formData, discountType })}
                 options={[
                   { value: 'percentage', label: 'Percentage (%)' },
-                  { value: 'fixed', label: 'Fixed Amount ($)' },
+                  { value: 'fixed', label: `Fixed Amount (${symbol})` },
                 ]}
                 ariaLabel="Discount type"
                 required
@@ -245,7 +290,7 @@ export const AdminCouponsPage = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] uppercase font-bold text-slate-700 block mb-1">
-                Min Order Spend ($)
+                Min Order Spend ({symbol})
               </label>
               <input
                 type="number"
@@ -261,6 +306,7 @@ export const AdminCouponsPage = () => {
               <input
                 type="date"
                 required
+              min={formatLocalDate(new Date())}
                 value={formData.endDate}
                 onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"

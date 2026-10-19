@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Mail, Phone, MapPin, Clock, MessageCircle, Send, CheckCircle } from 'lucide-react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import { InternationalPhoneInput, isPhoneValid } from '../components/common/InternationalPhoneInput';
 
 export const ContactPage = () => {
-  const { settings } = useSettings();
+  const { settings, refreshSettings } = useSettings();
+
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   const [formData, setFormData] = useState({
     name: '',

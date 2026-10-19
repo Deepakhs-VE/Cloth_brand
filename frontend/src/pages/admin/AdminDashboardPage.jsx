@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  DollarSign,
+  Euro,
   ShoppingBag,
   Users,
   Package,
@@ -14,8 +14,10 @@ import {
 import api from '../../services/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { OrderStatusBadge } from '../../components/common/Badge';
+import { useCurrency } from '../../hooks/useCurrency';
 
 export const AdminDashboardPage = () => {
+  const { formatMoney } = useCurrency();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -92,14 +94,14 @@ export const AdminDashboardPage = () => {
                 Gross Revenue
               </p>
               <h3 className="font-luxury text-2xl font-black text-slate-900 mt-1">
-                ${stats.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {formatMoney(stats.totalRevenue, stats.currency)}
               </h3>
               <p className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center">
                 <TrendingUp className="w-3.5 h-3.5 mr-1" /> Verified settlements
               </p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="w-6 h-6" />
+              <Euro className="w-6 h-6" />
             </div>
           </div>
 
@@ -166,15 +168,25 @@ export const AdminDashboardPage = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {data.lowStockProducts.map((p) => (
-                <div key={p._id} className="p-3 bg-orange-50/60 rounded-xl border border-orange-100 flex items-center justify-between">
+                <Link
+                  key={p._id}
+                  to={`/admin/products?edit=${p.productId}&variantSku=${encodeURIComponent(p.sku || '')}`}
+                  className="p-3 bg-orange-50/60 rounded-xl border border-orange-100 flex items-center justify-between transition hover:border-orange-300 hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  title={`Open ${p.name} inventory`}
+                >
                   <div>
                     <p className="text-xs font-bold text-slate-900 truncate max-w-[180px]">{p.name}</p>
                     <p className="text-[10px] text-slate-500">SKU: {p.sku}</p>
+                    {p.isVariant && (
+                      <p className="text-[10px] text-slate-500">
+                        {p.color || 'Default colour'} · {p.size || 'One size'}
+                      </p>
+                    )}
                   </div>
                   <span className="text-xs font-black text-orange-700 px-2 py-0.5 bg-orange-100 rounded">
                     {p.stock} left
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -223,7 +235,7 @@ export const AdminDashboardPage = () => {
                           <OrderStatusBadge status={o.orderStatus} />
                         </td>
                         <td className="py-3.5 text-right font-bold text-slate-900">
-                          ${o.totalAmount.toFixed(2)}
+                          {formatMoney(o.totalAmount, o.currency)}
                         </td>
                       </tr>
                     ))}

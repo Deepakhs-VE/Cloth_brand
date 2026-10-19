@@ -41,7 +41,7 @@ export const validateCoupon = async (req, res, next) => {
     if (coupon.minOrderAmount && subtotal < coupon.minOrderAmount) {
       return res.status(400).json({
         success: false,
-        message: `Minimum order amount of $${coupon.minOrderAmount} required to use this coupon`,
+        message: `A minimum order value of ${coupon.minOrderAmount} is required to use this coupon`,
       });
     }
 
@@ -75,7 +75,25 @@ export const validateCoupon = async (req, res, next) => {
 
 export const getCoupons = async (req, res, next) => {
   try {
-    const coupons = await Coupon.find().sort({ createdAt: -1 });
+    const now = new Date();
+    const couponDocuments = await Coupon.find().sort({ createdAt: -1 }).lean();
+    const coupons = couponDocuments.map((coupon) => {
+      let availabilityStatus = 'available';
+      if (!coupon.isActive) availabilityStatus = 'disabled';
+      else if (coupon.startDate > now) availabilityStatus = 'scheduled';
+      else if (coupon.endDate < now) availabilityStatus = 'expired';
+      else if (coupon.usageLimit != null && (coupon.usageCount || 0) >= coupon.usageLimit) {
+        availabilityStatus = 'exhausted';
+      }
+
+      return {
+        ...coupon,
+        availabilityStatus,
+        storefrontVisible: availabilityStatus === 'available',
+      };
+    });
+
+    res.set('Cache-Control', 'no-store');
     res.status(200).json({ success: true, count: coupons.length, coupons });
   } catch (error) {
     next(error);
@@ -91,19 +109,24 @@ export const getPublicCoupons = async (req, res, next) => {
       isActive: true,
       startDate: { $lte: now },
       endDate: { $gte: now },
-      $or: [
-        { usageLimit: null },
-        { usageLimit: { $exists: false } },
-        { $expr: { $lt: [{ $ifNull: ['$usageCount', 0] }, '$usageLimit'] } },
-      ],
     })
       .select(
-        'code discountType discountValue minOrderAmount maxDiscountAmount startDate endDate description'
+        'code discountType discountValue minOrderAmount maxDiscountAmount startDate endDate description usageLimit usageCount'
       )
       .sort({ createdAt: -1 })
       .lean();
 
-    res.status(200).json({ success: true, count: coupons.length, coupons });
+    // Supports unlimited coupons and older records where usage fields are absent.
+    const availableCoupons = coupons
+      .filter((coupon) => coupon.usageLimit == null || (coupon.usageCount || 0) < coupon.usageLimit)
+      .map(({ usageLimit, usageCount, ...publicCoupon }) => publicCoupon);
+
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({
+      success: true,
+      count: availableCoupons.length,
+      coupons: availableCoupons,
+    });
   } catch (error) {
     next(error);
   }
@@ -132,6 +155,15 @@ export const createCoupon = async (req, res, next) => {
       });
     }
 
+    const parsedEndDate = new Date(endDate);
+    if (Number.isNaN(parsedEndDate.getTime())) {
+      return res.status(400).json({ success: false, message: 'Please provide a valid expiration date' });
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) parsedEndDate.setUTCHours(23, 59, 59, 999);
+    if (parsedEndDate < new Date()) {
+      return res.status(400).json({ success: false, message: 'Expiration date must be today or later' });
+    }
+
     const existing = await Coupon.findOne({ code: code.toUpperCase().trim() });
     if (existing) {
       return res.status(400).json({ success: false, message: 'Coupon code already exists' });
@@ -144,7 +176,7 @@ export const createCoupon = async (req, res, next) => {
       minOrderAmount: minOrderAmount ? Number(minOrderAmount) : 0,
       maxDiscountAmount: maxDiscountAmount ? Number(maxDiscountAmount) : null,
       startDate: startDate ? new Date(startDate) : new Date(),
-      endDate: new Date(endDate),
+      endDate: parsedEndDate,
       usageLimit: usageLimit ? Number(usageLimit) : null,
       perUserLimit: perUserLimit ? Number(perUserLimit) : 1,
       isActive: isActive !== undefined ? Boolean(isActive) : true,
@@ -166,6 +198,20 @@ export const updateCoupon = async (req, res, next) => {
 
     if (req.body.code) {
       req.body.code = req.body.code.toUpperCase().trim();
+    }
+    if (req.body.endDate && /^\d{4}-\d{2}-\d{2}$/.test(req.body.endDate)) {
+      const endDate = new Date(req.body.endDate);
+      endDate.setUTCHours(23, 59, 59, 999);
+      req.body.endDate = endDate;
+    }
+    if (req.body.endDate) {
+      const endDate = new Date(req.body.endDate);
+      if (Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid expiration date' });
+      }
+      if (endDate < new Date()) {
+        return res.status(400).json({ success: false, message: 'Expiration date must be today or later' });
+      }
     }
 
     Object.assign(coupon, req.body);

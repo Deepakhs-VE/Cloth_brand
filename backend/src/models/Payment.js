@@ -19,7 +19,7 @@ const paymentSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      default: 'USD',
+      default: 'EUR',
       uppercase: true,
     },
     provider: {
@@ -55,6 +55,19 @@ const paymentSchema = new mongoose.Schema(
       reason: String,
       status: String,
       refundedAt: Date,
+    },
+    refunds: {
+      type: [
+        {
+          refundId: { type: String, required: true },
+          amount: { type: Number, required: true, min: 0 },
+          reason: { type: String, default: '' },
+          status: { type: String, default: '' },
+          itemReturnRequestId: { type: mongoose.Schema.Types.ObjectId, default: null },
+          refundedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
     },
   },
   {

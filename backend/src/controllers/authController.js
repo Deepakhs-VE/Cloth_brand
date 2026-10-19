@@ -10,7 +10,7 @@ import { normalizePhoneNumber } from '../utils/phone.js';
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, confirmPassword, phone } = req.body;
+    const { name, email, password, confirmPassword, phone, acceptedLegalTerms } = req.body;
 
     if (!name || !email || !password || !confirmPassword) {
       return res.status(400).json({
@@ -24,6 +24,10 @@ export const register = async (req, res, next) => {
         success: false,
         message: 'Password and confirm password must match',
       });
+    }
+
+    if (acceptedLegalTerms !== true) {
+      return res.status(400).json({ success: false, message: 'You must accept the Terms and Privacy Policy to create an account' });
     }
 
     const existingUser = await User.findOne({ email });
@@ -40,6 +44,11 @@ export const register = async (req, res, next) => {
       password,
       phone: normalizePhoneNumber(phone),
       role: 'customer',
+      legalConsent: {
+        acceptedAt: new Date(),
+        termsVersion: process.env.LEGAL_TERMS_VERSION || '2026-10',
+        privacyVersion: process.env.PRIVACY_POLICY_VERSION || '2026-10',
+      },
     });
 
     const accessToken = generateAccessToken(user._id, user.role);

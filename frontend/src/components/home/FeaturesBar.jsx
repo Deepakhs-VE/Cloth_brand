@@ -1,16 +1,20 @@
 import React from 'react';
-import { Truck, ShieldCheck, RotateCcw, Headphones } from 'lucide-react';
+import { Truck, ShieldCheck, RotateCcw, Headphones, Sparkles, Scissors } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
+import { useCurrency } from '../../hooks/useCurrency';
 
 const iconMap = {
   Truck: Truck,
   ShieldCheck: ShieldCheck,
   RotateCcw: RotateCcw,
   Headphones: Headphones,
+  Sparkles: Sparkles,
+  Scissors: Scissors,
 };
 
 export const FeaturesBar = () => {
   const { settings } = useSettings();
+  const { formatMoney, commerce } = useCurrency();
 
   const features = settings?.features && settings.features.length > 0
     ? settings.features
@@ -18,7 +22,7 @@ export const FeaturesBar = () => {
         {
           icon: 'Truck',
           title: 'Worldwide Express Delivery',
-          description: 'Complimentary shipping on orders over $150',
+          description: `Complimentary shipping on orders over ${formatMoney(commerce.freeShippingThreshold ?? 150)}`,
         },
         {
           icon: 'ShieldCheck',
@@ -27,7 +31,7 @@ export const FeaturesBar = () => {
         },
         {
           icon: 'RotateCcw',
-          title: '30-Day Return Privilege',
+          title: `${commerce.defaultReturnWindowDays ?? 30}-Day Return Privilege`,
           description: 'Hassle-free complimentary returns & exchanges',
         },
         {

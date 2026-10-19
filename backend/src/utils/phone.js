@@ -22,7 +22,7 @@ export const normalizePhoneNumber = (
   }
 
   if (!input.startsWith('+')) {
-    const error = new Error(`${fieldName} must include a country calling code, for example +919876543210`);
+      const error = new Error(`${fieldName} must include a country calling code, for example +353851234567`);
     error.statusCode = 400;
     throw error;
   }

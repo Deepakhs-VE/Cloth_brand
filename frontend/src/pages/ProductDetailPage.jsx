@@ -13,6 +13,8 @@ import {
   CheckCircle,
   MessageSquare,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Ruler,
 } from 'lucide-react';
 import api from '../services/api';
@@ -22,10 +24,14 @@ import { useAuth } from '../context/AuthContext';
 import { StarRating } from '../components/common/StarRating';
 import { ProductCard } from '../components/common/ProductCard';
 import { Modal } from '../components/common/Modal';
+import { useCurrency } from '../hooks/useCurrency';
+import { ImageUpload } from '../components/common/ImageUpload';
+import { SelectDropdown } from '../components/common/SelectDropdown';
+import { europeanCountryOptions } from '../utils/europeanCountries';
 
 // Inches are the canonical tailoring measurements. Centimeters are generated
 // from these values so both unit views always remain mathematically consistent.
-const sizeGuideData = [
+const alphaSizeGuide = [
   { size: 'XS', chest: [34, 36], waist: [28, 30], hips: [35, 37], length: 41.5 },
   { size: 'S', chest: [36, 38], waist: [30, 32], hips: [37, 39], length: 42.5 },
   { size: 'M', chest: [38, 40], waist: [32, 34], hips: [39, 41], length: 43.5 },
@@ -33,9 +39,57 @@ const sizeGuideData = [
   { size: 'XL', chest: [44, 46], waist: [38, 40], hips: [45, 47], length: 45.5 },
 ];
 
-const formatMeasurement = (value, unit) => {
-  const convert = (measurement) =>
-    unit === 'cm' ? Math.round(measurement * 2.54) : measurement;
+const sizeGuideConfigs = {
+  alpha: {
+    description: 'Body measurements for standard apparel sizing.',
+    columns: [
+      { key: 'chest', label: 'Chest' },
+      { key: 'waist', label: 'Waist' },
+      { key: 'hips', label: 'Hips' },
+      { key: 'length', label: 'Length' },
+    ],
+    rows: alphaSizeGuide,
+  },
+  waist: {
+    description: 'Body waist and hip measurements for jeans and trousers.',
+    columns: [
+      { key: 'waist', label: 'Waist' },
+      { key: 'hips', label: 'Hips' },
+      { key: 'inseam', label: 'Inseam' },
+    ],
+    rows: [26, 28, 30, 32, 34, 36, 38, 40].map((size) => ({
+      size: String(size),
+      waist: [size, size + 1],
+      hips: [size + 8, size + 10],
+      inseam: 32,
+    })),
+  },
+  shoe: {
+    description: 'Foot measurements for footwear sizing. Measure heel to longest toe.',
+    columns: [
+      { key: 'footLength', label: 'Foot length' },
+    ],
+    rows: [
+      { size: '5', footLength: 9.1 }, { size: '6', footLength: 9.3 },
+      { size: '7', footLength: 9.6 }, { size: '8', footLength: 9.8 },
+      { size: '9', footLength: 10.1 }, { size: '10', footLength: 10.3 },
+      { size: '11', footLength: 10.6 }, { size: '12', footLength: 10.8 },
+    ],
+  },
+  one_size: {
+    description: 'This design is offered in one adaptable size. Review product specifications for its construction.',
+    columns: [],
+    rows: [{ size: 'One Size' }],
+  },
+};
+
+const formatMeasurement = (value, unit, sourceUnit = 'in') => {
+  const convert = (measurement) => {
+    if (unit === sourceUnit) return Math.round(measurement * 10) / 10;
+    return unit === 'cm'
+      ? Math.round(measurement * 2.54 * 10) / 10
+      : Math.round((measurement / 2.54) * 10) / 10;
+  };
   const suffix = unit === 'cm' ? 'cm' : 'in';
 
   if (Array.isArray(value)) {
@@ -50,6 +104,7 @@ export const ProductDetailPage = () => {
   const { addToCart, setCartDrawerOpen } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
   const { isAuthenticated, user } = useAuth();
+  const { formatMoney, currency, commerce } = useCurrency();
 
   const [product, setProduct] = useState(null);
   const [relatedProducts, setRelatedProducts] = useState([]);
@@ -57,17 +112,24 @@ export const ProductDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState('M');
+  const [selectedSize, setSelectedSize] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
   const [sizeGuideModalOpen, setSizeGuideModalOpen] = useState(false);
   const [measurementUnit, setMeasurementUnit] = useState('in');
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
+  const [deliveryCountry, setDeliveryCountry] = useState('');
+  const [deliveryPostalCode, setDeliveryPostalCode] = useState('');
+  const [deliveryQuote, setDeliveryQuote] = useState(null);
+  const [deliveryChecking, setDeliveryChecking] = useState(false);
 
   // Review modal state
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [reviewImages, setReviewImages] = useState([]);
+  const [reviewFit, setReviewFit] = useState('');
+  const [reviewQuality, setReviewQuality] = useState(5);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState('');
   const [reviewError, setReviewError] = useState('');
@@ -82,13 +144,21 @@ export const ProductDetailPage = () => {
           setProduct(prod);
           setRelatedProducts(res.data.relatedProducts || []);
           setActiveImageIndex(0);
-          if (prod.sizes && prod.sizes.length > 0) {
+          const activeVariants = (prod.variants || []).filter((variant) => variant.isActive !== false);
+          const initialVariant = activeVariants.find((variant) => variant.stock > 0) || activeVariants[0];
+          if (initialVariant) {
+            setSelectedSize(initialVariant.size || '');
+            setSelectedColor(initialVariant.color || '');
+            setActiveImageIndex(0);
+          } else if (prod.sizes && prod.sizes.length > 0) {
             setSelectedSize(prod.sizes[0]);
           } else {
-            setSelectedSize('M');
+            setSelectedSize('');
           }
-          if (prod.colors && prod.colors.length > 0) {
+          if (!initialVariant && prod.colors && prod.colors.length > 0) {
             setSelectedColor(prod.colors[0]);
+          } else if (!initialVariant) {
+            setSelectedColor('');
           }
 
           // Fetch reviews for this product
@@ -106,6 +176,23 @@ export const ProductDetailPage = () => {
 
     fetchProductDetails();
   }, [slug]);
+
+  // Advance the main image and keep the thumbnail strip aligned below it.
+  // The gallery resets whenever the customer chooses a different colour.
+  useEffect(() => {
+    if (!product) return undefined;
+    const activeVariants = (product.variants || []).filter((variant) => variant.isActive !== false);
+    const colourImages = activeVariants.length
+      ? [...new Set(activeVariants.filter((variant) => variant.color === selectedColor).flatMap((variant) => variant.images || []).filter(Boolean))]
+      : [];
+    const images = [...new Set([...colourImages, ...(product.images || [])])];
+    if (images.length < 2) return undefined;
+
+    const timer = window.setInterval(() => {
+      setActiveImageIndex((index) => (index + 1) % images.length);
+    }, 2800);
+    return () => window.clearInterval(timer);
+  }, [product, selectedColor]);
 
   if (loading) {
     return (
@@ -128,9 +215,101 @@ export const ProductDetailPage = () => {
   }
 
   const isWishlisted = isInWishlist(product._id);
-  const hasDiscount = product.discountPrice !== null && product.discountPrice !== undefined && product.discountPrice < product.price;
-  const isOutOfStock = product.stock <= 0;
-  const activePrice = hasDiscount ? product.discountPrice : product.price;
+  const activeVariants = (product.variants || []).filter((variant) => variant.isActive !== false);
+  const selectedVariant = activeVariants.find(
+    (variant) => variant.size === selectedSize && variant.color === selectedColor
+  );
+  const availableColors = activeVariants.length
+    ? [...new Set(activeVariants.map((variant) => variant.color).filter(Boolean))]
+    : product.colors || [];
+  const availableSizes = activeVariants.length
+    ? [...new Set(
+        activeVariants
+          .filter((variant) =>
+            (!availableColors.length || variant.color === selectedColor) && variant.stock > 0
+          )
+          .map((variant) => variant.size)
+          .filter(Boolean)
+      )]
+    : product.sizes || [];
+  const selectableColors = activeVariants.length && selectedSize
+    ? availableColors.filter((color) => activeVariants.some(
+        (variant) => variant.color === color && variant.size === selectedSize && variant.stock > 0
+      ))
+    : availableColors;
+  const colorGalleryImages = activeVariants.length
+    ? [...new Set(
+        activeVariants
+          .filter((variant) => variant.color === selectedColor)
+          .flatMap((variant) => variant.images || [])
+          .filter(Boolean)
+      )]
+    : [];
+  // Keep the selected colour's images first, then show every remaining product
+  // image beneath the main photo so customers can browse the complete gallery.
+  const galleryImages = [...new Set([...colorGalleryImages, ...(product.images || [])])];
+  const displayGalleryImages = galleryImages.length ? galleryImages : ['/image-placeholder.svg'];
+  const currentImageIndex = Math.min(activeImageIndex, displayGalleryImages.length - 1);
+  const moveGallery = (direction) => {
+    setActiveImageIndex((currentIndex) =>
+      (currentIndex + direction + displayGalleryImages.length) % displayGalleryImages.length
+    );
+  };
+  const selectedStock = activeVariants.length ? selectedVariant?.stock || 0 : product.stock;
+  const regularPrice = selectedVariant?.price ?? product.price;
+  const discountPrice = selectedVariant?.discountPrice !== null && selectedVariant?.discountPrice !== undefined
+    ? selectedVariant.discountPrice
+    : selectedVariant?.price !== null && selectedVariant?.price !== undefined
+    ? null
+    : product.discountPrice;
+  const hasDiscount = discountPrice !== null && discountPrice !== undefined && discountPrice < regularPrice;
+  const isOutOfStock = selectedStock <= 0;
+  const activePrice = hasDiscount ? discountPrice : regularPrice;
+  const configuredSizeGuide = product.sizeChart?.rows?.length > 0
+    ? {
+        description: `${product.sizeChart.measurementType === 'garment' ? 'Garment' : 'Body'} measurements supplied for this product.`,
+        sourceUnit: product.sizeChart.unit || 'cm',
+        columns: (product.sizeChart.columns || []).map((column) => ({ key: column, label: column })),
+        rows: product.sizeChart.rows.map((row) => ({
+          size: row.size,
+          ...Object.fromEntries((row.measurements || []).map((measurement) => [measurement.key, measurement.value])),
+        })),
+      }
+    : null;
+  const sizeGuide = configuredSizeGuide || { ...(sizeGuideConfigs[product.sizeSystem] || sizeGuideConfigs.alpha), sourceUnit: 'in' };
+
+  const checkDelivery = async () => {
+    if (!deliveryCountry.trim() || !deliveryPostalCode.trim()) return;
+    setDeliveryChecking(true);
+    try {
+      const response = await api.post('/settings/delivery-quote', {
+        country: deliveryCountry,
+        postalCode: deliveryPostalCode,
+        subtotal: activePrice,
+      });
+      setDeliveryQuote(response.data);
+    } catch (error) {
+      setDeliveryQuote({ serviceable: false, message: error.response?.data?.message || 'Unable to check delivery right now' });
+    } finally {
+      setDeliveryChecking(false);
+    }
+  };
+
+  const handleColorSelect = (color) => {
+    setSelectedColor(color);
+    if (activeVariants.length) {
+      const matchingVariants = activeVariants.filter((variant) => variant.color === color);
+      const preservedSizeVariant = matchingVariants.find(
+        (variant) => variant.size === selectedSize && variant.stock > 0
+      );
+      const nextVariant = preservedSizeVariant
+        || matchingVariants.find((variant) => variant.stock > 0)
+        || matchingVariants[0];
+      setSelectedSize(nextVariant?.size || '');
+      setActiveImageIndex(0);
+      setQuantity(1);
+    }
+  };
 
   const handleAddToCart = async () => {
     if (isOutOfStock || adding) return;
@@ -160,18 +339,50 @@ export const ProductDetailPage = () => {
         productId: product._id,
         rating: reviewRating,
         comment: reviewComment,
+        images: reviewImages,
+        fitFeedback: reviewFit,
+        qualityRating: reviewQuality,
       });
 
       if (res.data.success) {
         setReviewSuccess('Thank you! Your review has been submitted.');
         setReviews([res.data.review, ...reviews]);
         setReviewComment('');
+        setReviewImages([]);
+        setReviewFit('');
         setTimeout(() => setReviewModalOpen(false), 2000);
       }
     } catch (err) {
       setReviewError(err.response?.data?.message || 'Failed to submit review');
     } finally {
       setReviewSubmitting(false);
+    }
+  };
+
+  const toggleHelpful = async (reviewId) => {
+    if (!isAuthenticated) {
+      navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    try {
+      const response = await api.patch(`/reviews/${reviewId}/helpful`);
+      setReviews((current) => current.map((review) => review._id === reviewId
+        ? { ...review, helpfulBy: Array.from({ length: response.data.helpfulCount }, (_, index) => index) }
+        : review));
+    } catch (error) {
+      console.error('Could not update helpful vote:', error);
+    }
+  };
+
+  const reportReview = async (reviewId) => {
+    if (!isAuthenticated) {
+      navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    try {
+      await api.post(`/reviews/${reviewId}/report`);
+    } catch (error) {
+      console.error('Could not report review:', error);
     }
   };
 
@@ -201,27 +412,55 @@ export const ProductDetailPage = () => {
           <div className="space-y-4">
             {/* Primary Main Image */}
             <div className="aspect-[4/5] bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-md relative">
-              <img
-                src={product.images?.[activeImageIndex] || product.images?.[0]}
-                alt={product.name}
-                className="w-full h-full object-cover object-center"
-              />
+              <div
+                className="flex h-full transition-transform duration-500 ease-out motion-reduce:transition-none"
+                style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
+              >
+                {displayGalleryImages.map((image, index) => (
+                  <img
+                    key={`${image}-${index}`}
+                    src={image}
+                    alt={`${product.name} — view ${index + 1}`}
+                    className="h-full w-full shrink-0 object-cover object-center"
+                  />
+                ))}
+              </div>
               {hasDiscount && (
                 <span className="absolute top-4 left-4 bg-amber-600 text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded shadow-sm">
-                  Save ${(product.price - product.discountPrice).toFixed(0)}
+                  Save {formatMoney(regularPrice - discountPrice)}
                 </span>
+              )}
+              {displayGalleryImages.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => moveGallery(-1)}
+                    aria-label="Previous product image"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-900 shadow-sm transition hover:bg-white"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveGallery(1)}
+                    aria-label="Next product image"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-slate-900 shadow-sm transition hover:bg-white"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </>
               )}
             </div>
 
             {/* Thumbnail Selectors */}
-            {product.images && product.images.length > 1 && (
-              <div className="flex space-x-3 overflow-x-auto pb-2">
-                {product.images.map((img, idx) => (
+            {displayGalleryImages.length > 1 && (
+              <div className="flex gap-3 overflow-x-auto pb-2 pr-2 [scrollbar-width:thin]">
+                {displayGalleryImages.map((img, idx) => (
                   <button
                     key={idx}
                     onClick={() => setActiveImageIndex(idx)}
                     className={`w-20 h-20 rounded-xl overflow-hidden border-2 transition flex-shrink-0 ${
-                      activeImageIndex === idx ? 'border-slate-900 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'
+                      currentImageIndex === idx ? 'border-slate-900 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'
                     }`}
                   >
                     <img src={img} alt="" className="w-full h-full object-cover" />
@@ -245,31 +484,35 @@ export const ProductDetailPage = () => {
 
               {/* Rating and Reviews */}
               <div className="flex items-center space-x-3">
-                <StarRating rating={product.averageRating || 5} size="w-4 h-4" />
+                <StarRating rating={product.averageRating || 0} size="w-4 h-4" />
                 <span className="text-xs font-semibold text-slate-700">
-                  {product.averageRating || 5.0}
+                  {product.numReviews > 0 ? Number(product.averageRating || 0).toFixed(1) : 'Not yet rated'}
                 </span>
                 <span className="text-xs text-slate-400">
                   ({reviews.length} reviews)
                 </span>
-                <span className="text-slate-300">•</span>
-                <span className="text-xs text-slate-400">SKU: {product.sku || 'AUR-001'}</span>
+                {(selectedVariant?.sku || product.sku) && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-xs text-slate-400">SKU: {selectedVariant?.sku || product.sku}</span>
+                  </>
+                )}
               </div>
             </div>
 
             {/* Price Box */}
             <div className="flex items-baseline space-x-3 py-3 border-y border-slate-100">
               <span className="text-3xl font-extrabold text-slate-900">
-                ${activePrice.toFixed(2)}
+                {formatMoney(activePrice)}
               </span>
               {hasDiscount && (
                 <span className="text-lg text-slate-400 line-through">
-                  ${product.price.toFixed(2)}
+                  {formatMoney(regularPrice)}
                 </span>
               )}
               {hasDiscount && (
                 <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                  {Math.round(((product.price - product.discountPrice) / product.price) * 100)}% off
+                  {Math.round(((regularPrice - discountPrice) / regularPrice) * 100)}% off
                 </span>
               )}
             </div>
@@ -285,9 +528,9 @@ export const ProductDetailPage = () => {
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
                   Currently Out of Stock
                 </span>
-              ) : product.stock <= 5 ? (
+              ) : selectedStock <= 5 ? (
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200">
-                  ⚠️ Limited Atelier Reserve — Only {product.stock} units remaining
+                  Limited availability — only {selectedStock} unit(s) in this selection
                 </span>
               ) : (
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -297,7 +540,7 @@ export const ProductDetailPage = () => {
             </div>
 
             {/* Garment Color Selection */}
-            {product.colors && product.colors.length > 0 && (
+            {availableColors.length > 0 && (
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -305,26 +548,32 @@ export const ProductDetailPage = () => {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {product.colors.map((color) => (
+                  {selectableColors.map((color) => {
+                    const swatch = product.colorOptions?.find((option) => option.name === color);
+                    return (
                     <button
                       key={color}
                       type="button"
-                      onClick={() => setSelectedColor(color)}
+                      onClick={() => handleColorSelect(color)}
                       className={`px-3.5 py-1.5 text-xs rounded-lg font-medium border transition ${
                         selectedColor === color
                           ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
                           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
                       }`}
                     >
-                      {color}
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-3.5 w-3.5 rounded-full border border-black/15" style={{ backgroundColor: swatch?.hex || '#CBD5E1', backgroundImage: swatch?.swatchImage ? `url(${swatch.swatchImage})` : undefined, backgroundSize: 'cover' }} />
+                        {color}
+                      </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {/* Garment Size Selection & Size Guide */}
-            <div className="space-y-2 pt-2 border-t border-slate-100">
+            {availableSizes.length > 0 && <div className="space-y-2 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Garment Size: <span className="text-amber-700 font-extrabold">{selectedSize}</span>
@@ -339,25 +588,34 @@ export const ProductDetailPage = () => {
                 </button>
               </div>
               <div className="grid grid-cols-5 gap-2">
-                {(product.sizes && product.sizes.length > 0
-                  ? product.sizes
-                  : ['XS', 'S', 'M', 'L', 'XL']
-                ).map((size) => (
+                {availableSizes.map((size) => {
+                  const sizeVariant = activeVariants.find(
+                    (variant) => variant.color === selectedColor && variant.size === size
+                  );
+                  const sizeOutOfStock = activeVariants.length > 0 && (!sizeVariant || sizeVariant.stock <= 0);
+                  return (
                   <button
                     key={size}
                     type="button"
-                    onClick={() => setSelectedSize(size)}
+                    onClick={() => {
+                      setSelectedSize(size);
+                      setQuantity(1);
+                    }}
+                    disabled={sizeOutOfStock}
                     className={`py-2.5 text-xs font-bold rounded-xl border text-center transition ${
                       selectedSize === size
                         ? 'border-slate-900 bg-slate-900 text-white shadow-md'
+                        : sizeOutOfStock
+                        ? 'border-slate-200 bg-slate-50 text-slate-400 line-through cursor-not-allowed'
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
                     }`}
                   >
                     {size}
                   </button>
-                ))}
+                  );
+                })}
               </div>
-            </div>
+            </div>}
 
             {/* Quantity Stepper & CTAs */}
             <div className="space-y-4 pt-2">
@@ -373,8 +631,8 @@ export const ProductDetailPage = () => {
                   </button>
                   <span className="px-4 text-sm font-bold text-slate-800">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                    disabled={quantity >= product.stock || isOutOfStock}
+                    onClick={() => setQuantity(Math.min(selectedStock, quantity + 1))}
+                    disabled={quantity >= selectedStock || isOutOfStock}
                     className="p-2.5 text-slate-500 hover:text-slate-900 disabled:opacity-30 transition"
                   >
                     <Plus className="w-4 h-4" />
@@ -438,11 +696,11 @@ export const ProductDetailPage = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-slate-100 text-xs text-slate-500">
               <div className="flex items-center space-x-2">
                 <Truck className="w-4 h-4 text-amber-600" />
-                <span>Complimentary Delivery &gt; $150</span>
+                <span>Complimentary Delivery &gt; {formatMoney(commerce.freeShippingThreshold ?? 150)}</span>
               </div>
               <div className="flex items-center space-x-2">
                 <RotateCcw className="w-4 h-4 text-amber-600" />
-                <span>30-Day Effortless Returns</span>
+                <span>{product.returnPolicy?.finalSale ? 'Final sale item' : product.returnPolicy?.returnable === false ? 'Exchange only' : `${product.returnPolicy?.returnWindowDays ?? commerce.defaultReturnWindowDays ?? 30}-Day Returns`}</span>
               </div>
               <div className="flex items-center space-x-2">
                 <ShieldCheck className="w-4 h-4 text-amber-600" />
@@ -465,13 +723,37 @@ export const ProductDetailPage = () => {
             </div>
 
             {/* Specifications Box */}
-            {product.specifications && product.specifications.length > 0 && (
+            {(product.fit || product.fabric || product.garmentType || product.specifications?.length > 0) && (
               <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-4">
                   Bespoke Specifications
                 </h3>
                 <dl className="divide-y divide-slate-100 text-xs">
-                  {product.specifications.map((spec, idx) => (
+                  {product.garmentType && (
+                    <div className="py-2.5 flex justify-between gap-4">
+                      <dt className="text-slate-500 font-medium">Garment type</dt>
+                      <dd className="text-slate-900 font-semibold text-right">{product.garmentType}</dd>
+                    </div>
+                  )}
+                  {product.fit && (
+                    <div className="py-2.5 flex justify-between gap-4">
+                      <dt className="text-slate-500 font-medium">Fit</dt>
+                      <dd className="text-slate-900 font-semibold text-right capitalize">{product.fit}</dd>
+                    </div>
+                  )}
+                  {product.fabric && (
+                    <div className="py-2.5 flex justify-between gap-4">
+                      <dt className="text-slate-500 font-medium">Fabric</dt>
+                      <dd className="text-slate-900 font-semibold text-right">{product.fabric}</dd>
+                    </div>
+                  )}
+                  {Object.entries(product.fashionDetails || {}).filter(([, value]) => value).map(([key, value]) => (
+                    <div key={key} className="py-2.5 flex justify-between gap-4">
+                      <dt className="text-slate-500 font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}</dt>
+                      <dd className="text-slate-900 font-semibold text-right">{value}</dd>
+                    </div>
+                  ))}
+                  {(product.specifications || []).map((spec, idx) => (
                     <div key={idx} className="py-2.5 flex justify-between">
                       <dt className="text-slate-500 font-medium">{spec.key}</dt>
                       <dd className="text-slate-900 font-semibold text-right">{spec.value}</dd>
@@ -539,6 +821,27 @@ export const ProductDetailPage = () => {
                   <p className="text-xs sm:text-sm text-slate-600 leading-relaxed pl-12">
                     {rev.comment}
                   </p>
+                  {(rev.fitFeedback || rev.qualityRating) && (
+                    <div className="mt-3 ml-12 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-600">
+                      {rev.fitFeedback && <span className="rounded-full bg-slate-100 px-2.5 py-1">Fit: {rev.fitFeedback}</span>}
+                      {rev.qualityRating && <span className="rounded-full bg-slate-100 px-2.5 py-1">Quality: {rev.qualityRating}/5</span>}
+                    </div>
+                  )}
+                  {rev.images?.length > 0 && (
+                    <div className="mt-4 ml-12 flex flex-wrap gap-2">
+                      {rev.images.map((image, index) => (
+                        <a key={`${image}-${index}`} href={image} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-slate-200">
+                          <img src={image} alt={`Customer review ${index + 1}`} className="h-20 w-20 object-cover" loading="lazy" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-4 ml-12 flex items-center gap-4 text-[10px] font-semibold text-slate-500">
+                    <button type="button" onClick={() => toggleHelpful(rev._id)} className="hover:text-slate-900">
+                      Helpful ({rev.helpfulBy?.length || 0})
+                    </button>
+                    <button type="button" onClick={() => reportReview(rev._id)} className="hover:text-rose-700">Report</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -610,6 +913,34 @@ export const ProductDetailPage = () => {
               />
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">How did it fit?</label>
+                <select value={reviewFit} onChange={(event) => setReviewFit(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                  <option value="">Not specified</option>
+                  <option value="Runs small">Runs small</option>
+                  <option value="True to size">True to size</option>
+                  <option value="Runs large">Runs large</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1">Quality rating</label>
+                <select value={reviewQuality} onChange={(event) => setReviewQuality(Number(event.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                  {[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} / 5</option>)}
+                </select>
+              </div>
+            </div>
+
+            <ImageUpload
+              label="Customer photos (optional)"
+              value={reviewImages}
+              onChange={setReviewImages}
+              purpose="reviews"
+              multiple
+              maxFiles={5}
+              aspectClass="aspect-square"
+            />
+
             <button
               type="submit"
               disabled={reviewSubmitting}
@@ -631,7 +962,7 @@ export const ProductDetailPage = () => {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <p className="text-xs text-slate-500">
-              Garment sizing conforms to international tailoring dimensions.
+              {sizeGuide.description}
             </p>
             {/* Unit Switcher */}
             <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-bold self-start sm:self-auto">
@@ -668,14 +999,13 @@ export const ProductDetailPage = () => {
               <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3">Size</th>
-                  <th className="py-2.5 px-3">Chest</th>
-                  <th className="py-2.5 px-3">Waist</th>
-                  <th className="py-2.5 px-3">Hips</th>
-                  <th className="py-2.5 px-3">Length</th>
+                  {sizeGuide.columns.map((column) => (
+                    <th key={column.key} className="py-2.5 px-3">{column.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody key={measurementUnit} className="divide-y divide-slate-100 font-medium text-slate-600 animate-fade-in">
-                {sizeGuideData.map((row) => (
+                {sizeGuide.rows.map((row) => (
                   <tr
                     key={row.size}
                     className={
@@ -692,10 +1022,11 @@ export const ProductDetailPage = () => {
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.chest, measurementUnit)}</td>
-                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.waist, measurementUnit)}</td>
-                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.hips, measurementUnit)}</td>
-                    <td className="whitespace-nowrap py-2.5 px-3">{formatMeasurement(row.length, measurementUnit)}</td>
+                    {sizeGuide.columns.map((column) => (
+                      <td key={column.key} className="whitespace-nowrap py-2.5 px-3">
+                        {row[column.key] !== undefined ? formatMeasurement(row[column.key], measurementUnit, sizeGuide.sourceUnit) : '—'}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

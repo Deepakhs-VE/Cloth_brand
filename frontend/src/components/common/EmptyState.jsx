@@ -28,6 +28,7 @@ export const EmptyState = ({
       )}
       {onAction && actionText && !actionLink && (
         <button
+          type="button"
           onClick={onAction}
           className="inline-flex items-center justify-center px-6 py-2.5 bg-slate-900 text-white text-xs uppercase tracking-wider font-semibold rounded-lg hover:bg-slate-800 transition shadow-sm"
         >

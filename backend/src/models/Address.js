@@ -50,8 +50,15 @@ const addressSchema = new mongoose.Schema(
     country: {
       type: String,
       required: [true, 'Country is required'],
-      default: 'United States',
       trim: true,
+    },
+    countryCode: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      minlength: 2,
+      maxlength: 2,
+      default: '',
     },
     isDefault: {
       type: Boolean,

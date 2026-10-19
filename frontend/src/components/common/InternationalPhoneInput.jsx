@@ -44,7 +44,7 @@ export const InternationalPhoneInput = ({
         </p>
       ) : (
         <p className="text-[10px] text-slate-400 mt-1">
-          Include the country code, for example +919876543210.
+          Include the country code, for example +353851234567.
         </p>
       )}
     </div>

@@ -1,37 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Package, ArrowRight, Eye, AlertCircle } from 'lucide-react';
+import { Package, ArrowRight, AlertCircle, CreditCard } from 'lucide-react';
 import api from '../services/api';
 import { OrderStatusBadge } from '../components/common/Badge';
 import { EmptyState } from '../components/common/EmptyState';
 import { getProductPath } from '../utils/productPath';
 import { Pagination } from '../components/common/Pagination';
+import { useCurrency } from '../hooks/useCurrency';
 
 export const OrdersPage = () => {
+  const { formatMoney } = useCurrency();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [error, setError] = useState('');
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const res = await api.get(`/orders/my-orders?page=${page}&limit=6`);
+      if (res.data.success) {
+        setOrders(res.data.orders);
+        setTotalPages(res.data.pages || 1);
+        setTotalOrders(res.data.total || 0);
+        if (res.data.page && res.data.page !== page) setPage(res.data.page);
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err.response?.data?.message || 'We could not load your orders. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const res = await api.get(`/orders/my-orders?page=${page}&limit=6`);
-        if (res.data.success) {
-          setOrders(res.data.orders);
-          setTotalPages(res.data.pages || 1);
-          setTotalOrders(res.data.total || 0);
-          if (res.data.page && res.data.page !== page) setPage(res.data.page);
-        }
-      } catch (err) {
-        console.error('Error fetching orders:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchOrders();
-  }, [page]);
+  }, [fetchOrders]);
 
   return (
     <div className="bg-[#fcfbfa] min-h-screen py-12">
@@ -52,6 +59,19 @@ export const OrdersPage = () => {
             ))}
             <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
+        ) : error ? (
+          <div className="bg-white border border-rose-200 rounded-3xl p-8 text-center shadow-sm">
+            <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-slate-900">Unable to load order history</p>
+            <p className="text-xs text-slate-500 mt-1">{error}</p>
+            <button
+              type="button"
+              onClick={fetchOrders}
+              className="mt-5 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-slate-800 transition"
+            >
+              Try Again
+            </button>
+          </div>
         ) : orders.length > 0 ? (
           <div className="space-y-4">
             {orders.map((order) => (
@@ -65,6 +85,16 @@ export const OrdersPage = () => {
                       #{order.orderNumber}
                     </span>
                     <OrderStatusBadge status={order.orderStatus} />
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                      order.paymentStatus === 'PAID'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : order.paymentStatus === 'REFUNDED'
+                        ? 'bg-violet-50 text-violet-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      <CreditCard className="h-3 w-3" />
+                      {order.paymentMethod || 'Payment'} · {order.paymentStatus || 'Pending'}
+                    </span>
                     <span className="text-xs text-slate-400">
                       {new Date(order.createdAt).toLocaleDateString(undefined, {
                         year: 'numeric',
@@ -112,7 +142,15 @@ export const OrdersPage = () => {
                               {item.name}
                             </p>
                           )}
-                          <p className="text-[10px] text-slate-400">Qty: {item.quantity}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Size: {item.selectedSize || 'Not specified'} · Colour: {item.selectedColor || 'Not specified'}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Qty: {item.quantity} · {formatMoney(item.total ?? item.price * item.quantity, order.currency)}
+                          </p>
+                          {item.variantSku && (
+                            <p className="text-[9px] font-mono text-slate-400">SKU: {item.variantSku}</p>
+                          )}
                         </div>
                       </div>
                       );
@@ -122,9 +160,12 @@ export const OrdersPage = () => {
 
                 <div className="flex sm:flex-col items-center sm:items-end justify-between w-full md:w-auto gap-4 pt-4 md:pt-0 border-t md:border-0 border-slate-100">
                   <div className="text-left sm:text-right">
+                    <p className="text-[10px] text-slate-400 mb-1">
+                      {order.orderItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0)} item(s)
+                    </p>
                     <p className="text-[10px] uppercase font-bold text-slate-400">Total Charged</p>
                     <p className="font-luxury text-lg font-extrabold text-slate-900">
-                      ${order.totalAmount.toFixed(2)}
+                      {formatMoney(order.totalAmount, order.currency)}
                     </p>
                   </div>
 
@@ -132,7 +173,7 @@ export const OrdersPage = () => {
                     to={`/account/orders/${order._id}`}
                     className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs uppercase tracking-wider font-bold transition flex items-center space-x-1.5 shadow-sm"
                   >
-                    <span>View Timeline</span>
+                    <span>View Order Details</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>

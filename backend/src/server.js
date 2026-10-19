@@ -134,28 +134,51 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 let server;
+let databaseRetryTimer;
 
-const startServer = async () => {
+const connectDatabaseWithRetry = async (attempt = 1) => {
   try {
-    // Never accept requests until the initial database connection is ready.
     await connectDB();
 
-    server = app.listen(PORT, () => {
-      console.log(`[Server] Aura E-Commerce API running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-
-      if (process.env.EMAIL_MODE !== 'log') {
-        emailService.verifyConnection()
-          .then(() => console.log('[Email] SMTP connection verified'))
-          .catch((error) => console.error(`[Email Error] SMTP verification failed: ${error.message}`));
-      }
-    });
+    if (process.env.EMAIL_MODE !== 'log') {
+      emailService.verifyConnection()
+        .then(() => console.log('[Email] SMTP connection verified'))
+        .catch((error) => console.error(`[Email Error] SMTP verification failed: ${error.message}`));
+    }
   } catch (error) {
-    console.error('[Server] Startup aborted because the database is unavailable.');
-    process.exitCode = 1;
+    const retryDelay = Math.min(30000, 2000 * attempt);
+    console.error(`[Server] Database unavailable. Retrying in ${retryDelay / 1000}s.`);
+    databaseRetryTimer = setTimeout(() => connectDatabaseWithRetry(attempt + 1), retryDelay);
   }
 };
 
-startServer();
+// Open the HTTP port immediately. Until MongoDB is ready, the database guard
+// above returns 503 so clients can retry instead of receiving ECONNREFUSED.
+server = app.listen(PORT, () => {
+  console.log(`[Server] Aura E-Commerce API running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  connectDatabaseWithRetry();
+});
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`[Server] Port ${PORT} is already in use. The backend is probably already running in another terminal.`);
+  } else {
+    console.error(`[Server] Unable to start: ${error.message}`);
+  }
+  process.exitCode = 1;
+});
+
+const shutdown = (signal) => {
+  console.log(`[Server] ${signal} received. Closing gracefully.`);
+  if (databaseRetryTimer) clearTimeout(databaseRetryTimer);
+  server?.close(async () => {
+    await mongoose.connection.close().catch(() => {});
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('unhandledRejection', (err) => {
   console.error(`Unhandled Rejection: ${err.message}`);

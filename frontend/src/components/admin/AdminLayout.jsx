@@ -11,6 +11,7 @@ import {
   Quote,
   Mail,
   Settings,
+  Store,
   ExternalLink,
   LogOut,
   Menu,
@@ -28,19 +29,24 @@ export const AdminLayout = ({ children, title }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const brandName = settings?.brandName || 'AURA';
+  const isSeller = user?.role === 'seller';
 
-  const navItems = [
+  const adminNavItems = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
     { label: 'Products', path: '/admin/products', icon: Package },
     { label: 'Categories', path: '/admin/categories', icon: FolderTree },
     { label: 'Orders', path: '/admin/orders', icon: ShoppingBag },
     { label: 'Customers', path: '/admin/users', icon: Users },
+    { label: 'Sellers', path: '/admin/sellers', icon: Store },
     { label: 'Coupons & Offers', path: '/admin/coupons', icon: Tag },
     { label: 'Product Reviews', path: '/admin/reviews', icon: Star },
     { label: 'Testimonials', path: '/admin/testimonials', icon: Quote },
     { label: 'Inquiry Messages', path: '/admin/messages', icon: Mail },
     { label: 'Brand Settings', path: '/admin/settings', icon: Settings },
   ];
+  const navItems = isSeller
+    ? [{ label: 'My Catalog', path: '/seller/products', icon: Package }]
+    : adminNavItems;
 
   const handleLogout = () => {
     logout();
@@ -70,7 +76,7 @@ export const AdminLayout = ({ children, title }) => {
               {brandName}
             </span>
             <span className="text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-black tracking-wider uppercase">
-              Admin
+              {isSeller ? 'Seller' : 'Admin'}
             </span>
           </Link>
           <button

@@ -227,6 +227,14 @@ export const Navbar = () => {
 
                       <div className="py-1">
                         <Link
+                          to="/seller"
+                          onClick={() => setUserDropdownOpen(false)}
+                          className="flex items-center px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Tag className="w-4 h-4 mr-2 text-slate-400" />
+                          {user?.role === 'seller' ? 'Seller Portal' : 'Sell with us'}
+                        </Link>
+                        <Link
                           to="/account"
                           onClick={() => setUserDropdownOpen(false)}
                           className="flex items-center px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"

@@ -498,6 +498,11 @@ export const ProductDetailPage = () => {
                   </>
                 )}
               </div>
+              {product.seller?.storeName && product.seller.status === 'APPROVED' && (
+                <p className="mt-3 text-xs text-slate-600">
+                  Sold by <span className="font-semibold text-slate-900">{product.seller.storeName}</span>
+                </p>
+              )}
             </div>
 
             {/* Price Box */}

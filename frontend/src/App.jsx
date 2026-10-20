@@ -16,6 +16,7 @@ import { CartDrawer } from './components/layout/CartDrawer';
 import { FloatingWhatsApp } from './components/layout/FloatingWhatsApp';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AdminRoute } from './components/layout/AdminRoute';
+import { SellerRoute } from './components/layout/SellerRoute';
 import { CookieConsent } from './components/common/CookieConsent';
 
 const lazyNamed = (importer, exportName) =>
@@ -42,6 +43,7 @@ const OrderDetailPage = lazyNamed(() => import('./pages/OrderDetailPage'), 'Orde
 const AddressesPage = lazyNamed(() => import('./pages/AddressesPage'), 'AddressesPage');
 const WishlistPage = lazyNamed(() => import('./pages/WishlistPage'), 'WishlistPage');
 const ProfilePage = lazyNamed(() => import('./pages/ProfilePage'), 'ProfilePage');
+const SellerPortalPage = lazyNamed(() => import('./pages/SellerPortalPage'), 'SellerPortalPage');
 const AdminDashboardPage = lazyNamed(() => import('./pages/admin/AdminDashboardPage'), 'AdminDashboardPage');
 const AdminProductsPage = lazyNamed(() => import('./pages/admin/AdminProductsPage'), 'AdminProductsPage');
 const AdminCategoriesPage = lazyNamed(() => import('./pages/admin/AdminCategoriesPage'), 'AdminCategoriesPage');
@@ -52,6 +54,7 @@ const AdminReviewsPage = lazyNamed(() => import('./pages/admin/AdminReviewsPage'
 const AdminTestimonialsPage = lazyNamed(() => import('./pages/admin/AdminTestimonialsPage'), 'AdminTestimonialsPage');
 const AdminMessagesPage = lazyNamed(() => import('./pages/admin/AdminMessagesPage'), 'AdminMessagesPage');
 const AdminSettingsPage = lazyNamed(() => import('./pages/admin/AdminSettingsPage'), 'AdminSettingsPage');
+const AdminSellersPage = lazyNamed(() => import('./pages/admin/AdminSellersPage'), 'AdminSellersPage');
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -204,6 +207,8 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route path="/seller" element={<ProtectedRoute><SellerPortalPage /></ProtectedRoute>} />
+          <Route path="/seller/products" element={<SellerRoute><AdminProductsPage /></SellerRoute>} />
 
           {/* Admin Protected Routes */}
           <Route
@@ -286,6 +291,7 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          <Route path="/admin/sellers" element={<AdminRoute><AdminSellersPage /></AdminRoute>} />
 
           {/* 404 Fallback */}
           <Route

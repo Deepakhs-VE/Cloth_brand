@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Modal } from '../../components/common/Modal';
 import { ImageUpload } from '../../components/common/ImageUpload';
@@ -8,6 +9,9 @@ import { useApplicationAlert } from '../../context/ApplicationAlertContext';
 import { SelectDropdown } from '../../components/common/SelectDropdown';
 
 export const AdminCategoriesPage = () => {
+  const { user } = useAuth();
+  const isSeller = user?.role === 'seller';
+  const categoryApi = isSeller ? '/sellers/categories' : '/categories';
   const { showAlert, showConfirm } = useApplicationAlert();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +35,12 @@ export const AdminCategoriesPage = () => {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/categories/admin');
+      const res = await api.get(isSeller ? categoryApi : categoryApi + '/admin');
       if (res.data.success) {
         setCategories(res.data.categories);
       }
     } catch (err) {
-      console.error('Error fetching categories:', err);
+      showAlert(err.response?.data?.message || 'Could not load categories. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -105,9 +109,9 @@ export const AdminCategoriesPage = () => {
         })).filter((attribute) => attribute.key && attribute.label),
       };
       if (editingCategory) {
-        await api.put(`/categories/${editingCategory._id}`, payload);
+        await api.put(`${categoryApi}/${editingCategory._id}`, payload);
       } else {
-        await api.post('/categories', payload);
+        await api.post(categoryApi, payload);
       }
       await loadCategories();
       setModalOpen(false);
@@ -123,7 +127,7 @@ export const AdminCategoriesPage = () => {
     );
     if (confirmed) {
       try {
-        await api.delete(`/categories/${id}`);
+        await api.delete(`${categoryApi}/${id}`);
         await loadCategories();
       } catch (err) {
         showAlert(err.response?.data?.message || 'Error deleting category');
@@ -134,9 +138,10 @@ export const AdminCategoriesPage = () => {
   return (
     <AdminLayout title="Product Categories">
       <div className="space-y-6">
+        {loading && <p role="status" className="text-sm text-slate-500">Loading categories...</p>}
         <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <p className="text-xs text-slate-500 font-medium">
-            Manage your store navigation structure and thematic product groupings
+            {isSeller ? 'Use shared categories or create your own. You can edit and delete the categories you create.' : 'Manage your store navigation structure and thematic product groupings'}
           </p>
           <button
             onClick={handleOpenAdd}
@@ -188,7 +193,10 @@ export const AdminCategoriesPage = () => {
                   </span>
 
                   <div className="flex space-x-2">
+                    {isSeller && !cat.canManage && <span className="text-xs text-slate-500">Shared category</span>}
                     <button
+                      disabled={isSeller && !cat.canManage}
+                      hidden={isSeller && !cat.canManage}
                       onClick={() => handleOpenEdit(cat)}
                       className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition"
                       title="Edit"
@@ -196,6 +204,8 @@ export const AdminCategoriesPage = () => {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
+                      disabled={isSeller && !cat.canManage}
+                      hidden={isSeller && !cat.canManage}
                       onClick={() => handleDelete(cat._id)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                       title="Delete"
@@ -238,7 +248,7 @@ export const AdminCategoriesPage = () => {
                 onChange={(parent) => setFormData({ ...formData, parent })}
                 options={[
                   { value: '', label: 'Top-level category' },
-                  ...categories.filter((category) => category._id !== editingCategory?._id).map((category) => ({ value: category._id, label: category.name })),
+                  ...categories.filter((category) => category._id !== editingCategory?._id && (!isSeller || (category.canManage && category.isActive))).map((category) => ({ value: category._id, label: category.name })),
                 ]}
                 ariaLabel="Parent category"
               />

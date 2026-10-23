@@ -44,10 +44,12 @@ export const getCategories = async (req, res, next) => {
 
 export const getAllCategoriesAdmin = async (req, res, next) => {
   try {
-    const categories = await Category.find()
+    const categories = await Category.find(req.seller ? { $or: [{ isActive: true }, { createdBySeller: req.seller._id }] } : {})
       .populate('parent', 'name slug')
       .sort({ displayOrder: 1, createdAt: -1 });
-    res.status(200).json({ success: true, count: categories.length, categories });
+    res.status(200).json({ success: true, count: categories.length, categories: categories.map((category) => ({
+      ...category.toObject(), canManage: !req.seller || String(category.createdBySeller) === String(req.seller._id),
+    })) });
   } catch (error) {
     next(error);
   }
@@ -82,7 +84,17 @@ export const createCategory = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Category with this name already exists' });
     }
 
+    if (parent) {
+      const parentCategory = await Category.findById(parent);
+      if (!parentCategory || !parentCategory.isActive) return res.status(400).json({ success: false, message: 'Select an active parent category' });
+      if (req.seller && String(parentCategory.createdBySeller) !== String(req.seller._id)) {
+        return res.status(403).json({ success: false, message: 'Create subcategories under your own categories.' });
+      }
+      if (await Product.exists({ category: parent })) return res.status(400).json({ success: false, message: 'A category with products cannot become a parent. Reassign its products first.' });
+    }
+
     const category = await Category.create({
+      createdBySeller: req.seller?._id || null,
       name,
       slug,
       description: description || '',
@@ -105,7 +117,7 @@ export const createCategory = async (req, res, next) => {
 
 export const updateCategory = async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const category = await Category.findOne({ _id: req.params.id, ...(req.seller ? { createdBySeller: req.seller._id } : {}) });
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }
@@ -121,6 +133,13 @@ export const updateCategory = async (req, res, next) => {
     if (req.body.parent) {
       let ancestor = await Category.findById(req.body.parent).select('parent');
       if (!ancestor) return res.status(400).json({ success: false, message: 'Parent category does not exist' });
+      if (req.seller) {
+        const parentCategory = await Category.findById(req.body.parent);
+        if (!parentCategory.isActive || String(parentCategory.createdBySeller) !== String(req.seller._id)) {
+          return res.status(403).json({ success: false, message: 'Create subcategories under your own active categories.' });
+        }
+      }
+      if (await Product.exists({ category: req.body.parent })) return res.status(400).json({ success: false, message: 'A category with products cannot become a parent. Reassign its products first.' });
       while (ancestor) {
         if (ancestor._id.toString() === category._id.toString()) {
           return res.status(400).json({ success: false, message: 'This parent selection would create a category cycle' });
@@ -140,7 +159,7 @@ export const updateCategory = async (req, res, next) => {
 
 export const deleteCategory = async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const category = await Category.findOne({ _id: req.params.id, ...(req.seller ? { createdBySeller: req.seller._id } : {}) });
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }

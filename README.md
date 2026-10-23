@@ -54,6 +54,16 @@ EMAIL_FROM="AURA Concierge" <your-address@gmail.com>
 ALLOW_DEV_RESET_TOKEN=false
 ```
 
+### Seller approval emails
+
+Seller applications are emailed automatically to every account whose role is `admin`. Add the public backend URL as `API_URL` so approval links work outside local development:
+
+```env
+API_URL=https://api.your-store.example
+```
+
+Each approval or rejection link expires after seven days and shows a confirmation page before changing the seller status.
+
 Send a real test message before testing password recovery:
 
 ```bash
@@ -94,7 +104,7 @@ npm run dev      # Runs Vite dev server on http://localhost:5174
 | Role | Email | Password | Access Level |
 |---|---|---|---|
 | **Administrator** | `admin@aurastore.com` | `Admin@123456` | Full Admin Console & Storefront |
-| **Customer** | `customer@aurastore.com` | `Customer@123456` | Shopping, Wishlist, Checkout, Orders |
+| **Customer** | `customer1@example.com` | `Customer@123456` | Shopping, Wishlist, Checkout, Orders |
 
 *Note: The login page includes convenient 1-click **Quick-Fill** buttons for instant testing.*
 
@@ -159,3 +169,14 @@ aura-ecommerce/
 - **CORS**: Domain whitelisting with credentials support.
 - **MongoDB Indexes**: Text search indexing on product catalog, compound index on categories and coupons.
 - **Stock Validation**: Concurrency-safe decrementing on order placement with rollback on cancellation.
+
+
+### Seller catalog management
+
+Approved sellers can open `/seller` for catalog totals, `/seller/products` to manage their own products, variants, stock, prices and photos, and `/seller/categories` to create categories and subcategories. Shared active categories can be selected for products; sellers can edit or delete only categories they created. Categories containing products or subcategories cannot be deleted. Only sellers' own categories can receive seller-created subcategories.
+
+Seller catalog requests use `/api/sellers/products` and `/api/sellers/categories`. Ownership and approval are checked on the backend, including image uploads. Existing admin APIs remain admin-only. Existing products without a seller remain admin-managed; `npm run seed` assigns only the original demo products without an owner to the two demo sellers. Custom records and existing ownership are preserved.
+
+Demo seller login: `seller1@example.com` or `seller2@example.com`, password `Seller@123456` (unless configured with `SEED_SELLER_PASSWORD`). Orders and payments still use the store checkout; per-seller order fulfillment, commissions and payouts are not implemented.
+
+Run `cd backend` then `npm run test:seller` to verify catalog permissions and CRUD using an isolated test database. Run `cd frontend` then `npm run build` to validate the frontend.

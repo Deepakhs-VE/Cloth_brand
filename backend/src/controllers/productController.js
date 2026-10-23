@@ -350,7 +350,7 @@ export const getAllProductsAdmin = async (req, res, next) => {
     const settings = await getStoreSettings();
     await repairLegacyCurrencyPrices(settings);
     const { search, category, status, productId, page = 1, limit = 20 } = req.query;
-    const query = {};
+    const query = req.seller ? { seller: req.seller._id } : {};
 
     if (productId?.match(/^[0-9a-fA-F]{24}$/)) {
       query._id = productId;
@@ -462,6 +462,7 @@ export const createProduct = async (req, res, next) => {
     );
 
     const product = await Product.create({
+      seller: req.seller?._id || null,
       name,
       slug,
       description,
@@ -505,7 +506,7 @@ export const createProduct = async (req, res, next) => {
 
 export const updateProduct = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({ _id: req.params.id, ...(req.seller ? { seller: req.seller._id } : {}) });
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -560,7 +561,7 @@ export const updateProduct = async (req, res, next) => {
 
 export const deleteProduct = async (req, res, next) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findOneAndDelete({ _id: req.params.id, ...(req.seller ? { seller: req.seller._id } : {}) });
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -572,7 +573,7 @@ export const deleteProduct = async (req, res, next) => {
 
 export const toggleProductStatus = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({ _id: req.params.id, ...(req.seller ? { seller: req.seller._id } : {}) });
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }

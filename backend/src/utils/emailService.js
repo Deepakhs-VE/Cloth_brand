@@ -5,6 +5,10 @@ const formatOrderMoney = (order, value) => new Intl.NumberFormat(order.locale ||
   currency: order.currency || 'EUR',
 }).format(Number(value || 0));
 
+const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[character]));
+
 class EmailService {
   constructor() {
     this.transporter = null;
@@ -91,6 +95,15 @@ class EmailService {
     `;
     const text = `Password Reset: Click this link within 30 minutes to reset your password: ${resetUrl}`;
     return this.sendMail({ to: user.email, subject, html, text });
+  }
+
+  async sendSellerApplicationEmail(seller, user, adminEmails, token) {
+    const baseUrl = (process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, '');
+    const approveUrl = `${baseUrl}/api/sellers/review?token=${encodeURIComponent(token)}&action=approve`;
+    const rejectUrl = `${baseUrl}/api/sellers/review?token=${encodeURIComponent(token)}&action=reject`;
+    const subject = `Seller application: ${seller.storeName}`;
+    const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#1e293b;max-width:600px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px"><h2 style="color:#0f172a">New seller application</h2><p><strong>${escapeHtml(seller.storeName)}</strong> has applied to sell on AURA.</p><table style="border-collapse:collapse"><tr><td style="padding:4px 16px 4px 0">Applicant</td><td>${escapeHtml(user.name)} (${escapeHtml(user.email)})</td></tr><tr><td style="padding:4px 16px 4px 0">Legal business</td><td>${escapeHtml(seller.legalBusinessName)}</td></tr><tr><td style="padding:4px 16px 4px 0">Support</td><td>${escapeHtml(seller.supportEmail)}<br>${escapeHtml(seller.supportPhone)}</td></tr><tr><td style="padding:4px 16px 4px 0">VAT</td><td>${escapeHtml(seller.vatNumber || 'Not supplied')}</td></tr></table><p style="margin-top:24px"><a href="${approveUrl}" style="background:#0f172a;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:bold">Review and approve</a>&nbsp; <a href="${rejectUrl}" style="color:#b91c1c">Reject application</a></p><p style="font-size:12px;color:#64748b">The review link expires in 7 days and requires a confirmation step.</p></div>`;
+    return this.sendMail({ to: adminEmails.join(', '), subject, html, text: `New seller application from ${seller.storeName}. Approve: ${approveUrl} Reject: ${rejectUrl}` });
   }
 
   async sendOrderConfirmationEmail(order, user) {

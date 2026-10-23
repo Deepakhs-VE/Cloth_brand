@@ -19,7 +19,7 @@ export const SellerPortalPage = () => {
     try {
       const profile = await api.get('/sellers/me');
       setSeller(profile.data.seller);
-      if (user?.role === 'seller') {
+      if (user?.role === 'seller' && profile.data.seller.status === 'APPROVED') {
         const result = await api.get('/sellers/dashboard');
         setDashboard(result.data);
       }
@@ -36,16 +36,6 @@ export const SellerPortalPage = () => {
       setSeller(result.data.seller); showAlert(result.data.message);
     } catch (error) { showAlert(error.response?.data?.message || 'Could not submit application'); }
   };
-  const startOnboarding = async () => {
-    try {
-      const result = await api.post('/sellers/stripe/onboarding', { countryCode: seller?.businessAddress?.countryCode || 'IE' });
-      window.location.assign(result.data.onboardingUrl);
-    } catch (error) { showAlert(error.response?.data?.message || 'Could not begin Stripe onboarding'); }
-  };
-  const syncStripe = async () => {
-    try { const result = await api.post('/sellers/stripe/sync'); setSeller(result.data.seller); showAlert('Stripe account status updated'); }
-    catch (error) { showAlert(error.response?.data?.message || 'Could not refresh Stripe status'); }
-  };
 
   if (loading) return <div className="mx-auto max-w-5xl px-4 py-24 text-center text-sm text-slate-500">Loading seller portal…</div>;
   if (!seller) return (
@@ -60,13 +50,18 @@ export const SellerPortalPage = () => {
     </section>
   );
 
-  const stripeReady = seller.stripe?.payoutsEnabled;
   return <section className="mx-auto max-w-6xl px-4 py-12 sm:py-16">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-amber-700">Seller portal</p><h1 className="font-luxury text-4xl font-bold text-slate-900">{seller.storeName}</h1></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{seller.status}</span></div>
-    {seller.status !== 'APPROVED' ? <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">Your application is {seller.status.toLowerCase()}. An administrator must approve it before you can onboard with Stripe or sell products.</div> : <>
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">Stripe payouts</h2><p className="mt-1 text-sm text-slate-600">{stripeReady ? 'Your Stripe payout account is ready.' : 'Complete Stripe verification before receiving payouts.'}</p><div className="mt-4 flex gap-3"><button onClick={startOnboarding} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white">{seller.stripe?.accountId ? 'Continue Stripe onboarding' : 'Connect Stripe account'}</button>{seller.stripe?.accountId && <button onClick={syncStripe} className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold">Refresh status</button>}</div></div>
-      <div className="mt-6 flex items-center justify-between gap-4"><div className="grid flex-1 gap-4 sm:grid-cols-3">{['HELD', 'ELIGIBLE', 'PAID'].map((status) => <div key={status} className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold text-slate-500">{status}</p><p className="mt-2 text-2xl font-black text-slate-900">{Number(dashboard?.balances?.[status] || 0).toFixed(2)}</p></div>)}</div><Link to="/seller/products" className="shrink-0 rounded-xl bg-slate-900 px-4 py-3 text-xs font-bold text-white">Manage catalog</Link></div>
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold text-slate-900">Recent marketplace orders</h2><div className="mt-3 space-y-2">{dashboard?.orders?.length ? dashboard.orders.map((order) => <div key={order._id} className="flex justify-between border-t border-slate-100 py-3 text-sm"><span>{order.orderNumber}</span><span className="font-semibold">{order.orderStatus}</span></div>) : <p className="text-sm text-slate-500">No seller orders yet.</p>}</div></div>
+    {seller.status !== 'APPROVED' ? <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">Your application is {seller.status.toLowerCase()}. An administrator must approve it before you can manage and publish products.</div> : <>
+      <p className="mt-4 text-sm text-slate-600">Manage your catalog, organize categories and keep your inventory up to date.</p>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[['Products', 'products'], ['Published', 'active'], ['Low stock (5 or fewer)', 'lowStock'], ['Units in stock', 'units']].map(([label, key]) => <div key={key} className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-slate-900">{dashboard?.stats?.[key] ?? 0}</p></div>)}
+      </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <Link to="/seller/products" className="rounded-2xl bg-slate-900 p-6 text-white"><h2 className="text-lg font-bold">Manage products</h2><p className="mt-2 text-sm text-slate-300">Add products, upload photos, set prices and manage sizes, colours and stock.</p><span className="mt-4 inline-block text-sm font-bold text-amber-300">Open my catalog &rarr;</span></Link>
+        <Link to="/seller/categories" className="rounded-2xl border border-slate-200 bg-white p-6"><h2 className="text-lg font-bold text-slate-900">Manage categories</h2><p className="mt-2 text-sm text-slate-600">Create categories and subcategories with images, size presets and return policies, or use shared categories.</p><span className="mt-4 inline-block text-sm font-bold text-amber-700">Browse categories &rarr;</span></Link>
+      </div>
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold text-slate-900">Recently updated products</h2><div className="mt-3 space-y-2">{dashboard?.recentProducts?.length ? dashboard.recentProducts.map((product) => <Link to={`/seller/products?edit=${product._id}`} key={product._id} className="flex items-center justify-between gap-4 border-t border-slate-100 py-3 text-sm"><span className="font-semibold">{product.name}</span><span>{product.stock} in stock &middot; {product.isActive ? 'Published' : 'Hidden'}</span></Link>) : <p className="text-sm text-slate-500">Your catalog is empty. Add your first product to get started.</p>}</div></div>
     </>}
   </section>;
 };

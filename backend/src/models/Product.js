@@ -18,6 +18,7 @@ const productVariantSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
   {
+    seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null, index: true },
     name: {
       type: String,
       required: [true, 'Product name is required'],

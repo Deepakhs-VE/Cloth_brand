@@ -66,7 +66,7 @@ export const LoginPage = () => {
             </button>
             <button
               type="button"
-              onClick={() => handleQuickFill('customer@aurastore.com', 'Customer@123456')}
+              onClick={() => handleQuickFill('customer1@example.com', 'Customer@123456')}
               className="py-1.5 px-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-[11px] font-bold rounded-lg transition text-center"
             >
               Demo Customer

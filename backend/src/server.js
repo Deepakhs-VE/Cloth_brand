@@ -27,6 +27,7 @@ import contactRoutes from './routes/contactRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import sellerRoutes from './routes/sellerRoutes.js';
 import { stripeWebhook } from './controllers/paymentController.js';
 import { emailService } from './utils/emailService.js';
 import { uploadsDirectory } from './services/imageStorageService.js';
@@ -126,6 +127,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/sellers', sellerRoutes);
 
 // Error Handling Middlewares
 app.use(notFound);

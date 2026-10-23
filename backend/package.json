@@ -6,9 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js",
+    "dev": "node --watch src/server.js",
     "dev:watch": "node --watch src/server.js",
     "seed": "node src/utils/seedData.js",
+    "test:seller": "node --test test/sellerCatalog.test.js",
     "email:test": "node src/utils/testEmail.js"
   },
   "dependencies": {

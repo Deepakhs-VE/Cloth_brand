@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const categorySchema = new mongoose.Schema(
   {
+    createdBySeller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null, index: true },
     name: {
       type: String,
       required: [true, 'Category name is required'],

@@ -96,7 +96,7 @@ function PageMetadata() {
     if (descriptionTag) descriptionTag.setAttribute('content', description);
 
     const robotsTag = document.querySelector('meta[name="robots"]');
-    const isPrivate = pathname.startsWith('/admin') || pathname.startsWith('/account') || pathname === '/checkout';
+    const isPrivate = pathname.startsWith('/admin') || pathname.startsWith('/seller') || pathname.startsWith('/account') || pathname === '/checkout';
     if (robotsTag) robotsTag.setAttribute('content', isPrivate ? 'noindex, nofollow' : 'index, follow');
   }, [brandName, description, pageTitle, pathname]);
 
@@ -105,7 +105,7 @@ function PageMetadata() {
 
 function AppContent() {
   const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isAdminRoute = location.pathname.startsWith('/admin') || location.pathname.startsWith('/seller/');
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -209,6 +209,7 @@ function AppContent() {
           />
           <Route path="/seller" element={<ProtectedRoute><SellerPortalPage /></ProtectedRoute>} />
           <Route path="/seller/products" element={<SellerRoute><AdminProductsPage /></SellerRoute>} />
+          <Route path="/seller/categories" element={<SellerRoute><AdminCategoriesPage /></SellerRoute>} />
 
           {/* Admin Protected Routes */}
           <Route

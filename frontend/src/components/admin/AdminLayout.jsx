@@ -45,7 +45,9 @@ export const AdminLayout = ({ children, title }) => {
     { label: 'Brand Settings', path: '/admin/settings', icon: Settings },
   ];
   const navItems = isSeller
-    ? [{ label: 'My Catalog', path: '/seller/products', icon: Package }]
+    ? [{ label: 'Overview', path: '/seller', icon: LayoutDashboard },
+      { label: 'My Products', path: '/seller/products', icon: Package },
+      { label: 'Categories', path: '/seller/categories', icon: FolderTree }]
     : adminNavItems;
 
   const handleLogout = () => {

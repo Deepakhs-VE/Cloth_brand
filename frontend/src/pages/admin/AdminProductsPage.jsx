@@ -11,6 +11,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { Link } from 'react-router-dom';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { useSearchParams } from 'react-router-dom';
 import { Modal } from '../../components/common/Modal';
@@ -62,6 +64,9 @@ const FASHION_OPTIONS = {
 };
 
 export const AdminProductsPage = () => {
+  const { user } = useAuth();
+  const isSeller = user?.role === 'seller';
+  const productApi = isSeller ? '/sellers/products' : '/products';
   const [searchParams] = useSearchParams();
   const productToEditId = searchParams.get('edit') || '';
   const focusedVariantSku = searchParams.get('variantSku') || '';
@@ -123,8 +128,8 @@ export const AdminProductsPage = () => {
     try {
       setLoading(true);
       const [prodRes, catRes] = await Promise.all([
-        api.get(`/products/admin?page=${page}&limit=15&search=${encodeURIComponent(search)}${productToEditId ? `&productId=${encodeURIComponent(productToEditId)}` : ''}`),
-        api.get('/categories/admin'),
+        api.get(`${isSeller ? productApi : productApi + "/admin"}?page=${page}&limit=15&search=${encodeURIComponent(search)}${productToEditId ? `&productId=${encodeURIComponent(productToEditId)}` : ''}`),
+        api.get(isSeller ? '/sellers/categories' : '/categories/admin'),
       ]);
 
       if (prodRes.data.success) {
@@ -139,7 +144,7 @@ export const AdminProductsPage = () => {
         setCategories(catRes.data.categories);
       }
     } catch (err) {
-      console.error('Error loading products:', err);
+      showAlert(err.response?.data?.message || 'Could not load products. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -286,9 +291,9 @@ export const AdminProductsPage = () => {
       };
 
       if (editingProduct) {
-        await api.put(`/products/${editingProduct._id}`, payload);
+        await api.put(`${productApi}/${editingProduct._id}`, payload);
       } else {
-        await api.post('/products', payload);
+        await api.post(productApi, payload);
       }
 
       await loadData();
@@ -401,7 +406,7 @@ export const AdminProductsPage = () => {
     );
     if (confirmed) {
       try {
-        await api.delete(`/products/${id}`);
+        await api.delete(`${productApi}/${id}`);
         await loadData();
       } catch (err) {
         showAlert(err.response?.data?.message || 'Error deleting product');
@@ -411,7 +416,7 @@ export const AdminProductsPage = () => {
 
   const handleToggleStatus = async (id) => {
     try {
-      await api.patch(`/products/${id}/toggle-status`);
+      await api.patch(`${productApi}/${id}/toggle-status`);
       await loadData();
     } catch (err) {
       console.error('Error toggling status:', err);
@@ -419,8 +424,11 @@ export const AdminProductsPage = () => {
   };
 
   return (
-    <AdminLayout title="Product Catalog Management">
+    <AdminLayout title={isSeller ? "My Products" : "Product Catalog Management"}>
       <div className="space-y-6">
+        {isSeller && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>Manage your products, prices, images and stock.</p><Link className="font-bold underline" to="/seller/categories">Add or manage categories</Link></div>}
+        {loading && <p role="status" className="text-sm text-slate-500">Loading products...</p>}
+        {!loading && products.length === 0 && <p className="text-sm text-slate-500">No products found. Add a product to start building your catalog.</p>}
         {/* Actions bar */}
         <div className="flex flex-col gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-md">
@@ -1222,7 +1230,7 @@ export const AdminProductsPage = () => {
           )}
 
           <div className="flex items-center space-x-6 pt-2">
-            <label className="flex items-center space-x-2 cursor-pointer text-xs">
+            <label hidden={isSeller} className="items-center space-x-2 cursor-pointer text-xs" style={{ display: isSeller ? "none" : "flex" }}>
               <input
                 type="checkbox"
                 checked={formData.isFeatured}

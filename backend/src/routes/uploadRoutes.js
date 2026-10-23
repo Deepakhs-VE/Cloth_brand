@@ -2,13 +2,15 @@ import express from 'express';
 import { upload } from '../config/multer.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { storeImage } from '../services/imageStorageService.js';
+import { requireApprovedSeller } from '../middleware/sellerMiddleware.js';
 
 const router = express.Router();
 
 router.post(
   '/',
   protect,
-  authorize('admin'),
+  authorize('admin', 'seller'),
+  (req, res, next) => req.user.role === 'seller' ? requireApprovedSeller(req, res, next) : next(),
   upload.fields([
     { name: 'image', maxCount: 1 },
     { name: 'images', maxCount: 10 },
